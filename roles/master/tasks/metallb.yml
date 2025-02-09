@@ -2,12 +2,7 @@
 # Limpieza completa de MetalLB
 - name: Remove existing MetalLB installation
   shell: |
-    # Eliminar namespace y recursos
     kubectl delete namespace metallb-system --ignore-not-found=true
-    kubectl delete -f https://raw.githubusercontent.com/metallb/metallb/v0.13.7/config/manifests/metallb-native.yaml --ignore-not-found=true
-    
-    # Eliminar webhooks
-    kubectl delete validatingwebhookconfiguration metallb-webhook-configuration --ignore-not-found=true
   ignore_errors: yes
 
 - name: Wait for cleanup
@@ -24,31 +19,23 @@
     kubectl create secret generic -n metallb-system memberlist \
     --from-literal=secretkey="$(openssl rand -base64 128)"
 
-- name: Download MetalLB manifest
-  get_url:
-    url: https://raw.githubusercontent.com/metallb/metallb/v0.13.7/config/manifests/metallb-native.yaml
-    dest: /tmp/metallb.yaml
+- name: Download and modify MetalLB manifest
+  shell: |
+    # Descargar el manifiesto
+    wget https://raw.githubusercontent.com/metallb/metallb/v0.13.7/config/manifests/metallb-native.yaml -O /tmp/metallb-no-webhooks.yaml
+    # Eliminar las secciones de webhook
+    sed -i '/ValidatingWebhookConfiguration/,$d' /tmp/metallb-no-webhooks.yaml
 
-- name: Apply MetalLB manifest
-  command: kubectl apply -f /tmp/metallb.yaml
+- name: Apply modified MetalLB manifest
+  command: kubectl apply -f /tmp/metallb-no-webhooks.yaml
 
-- name: Wait for controller deployment
+- name: Wait for MetalLB deployment
   shell: |
     kubectl -n metallb-system rollout status deployment controller
   register: controller_status
+  retries: 30
+  delay: 10
   until: controller_status.rc == 0
-  retries: 30
-  delay: 10
-  ignore_errors: yes
-
-- name: Wait for speaker daemonset
-  shell: |
-    kubectl -n metallb-system rollout status daemonset speaker
-  register: speaker_status
-  until: speaker_status.rc == 0
-  retries: 30
-  delay: 10
-  ignore_errors: yes
 
 # Configuración de MetalLB
 - name: Create MetalLB config
@@ -74,15 +61,9 @@
         - first-pool
 
 - name: Apply MetalLB configuration
-  shell: |
-    kubectl apply -f /tmp/metallb-config.yaml --validate=false
+  command: kubectl apply -f /tmp/metallb-config.yaml
 
-- name: Verify MetalLB status
+- name: Show MetalLB status
   shell: |
-    echo "Pod Status:"
     kubectl get pods -n metallb-system
-    echo "Deployment Status:"
-    kubectl get deployment -n metallb-system
-    echo "DaemonSet Status:"
-    kubectl get daemonset -n metallb-system
   register: metallb_status 
