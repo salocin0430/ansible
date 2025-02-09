@@ -4,6 +4,7 @@
   shell: |
     # Eliminar namespace
     kubectl delete namespace metallb-system --ignore-not-found=true
+    
     # Eliminar CRDs
     kubectl delete crd addresspools.metallb.io --ignore-not-found=true
     kubectl delete crd bfdprofiles.metallb.io --ignore-not-found=true
@@ -12,9 +13,15 @@
     kubectl delete crd communities.metallb.io --ignore-not-found=true
     kubectl delete crd ipaddresspools.metallb.io --ignore-not-found=true
     kubectl delete crd l2advertisements.metallb.io --ignore-not-found=true
+    
+    # Eliminar webhook
+    kubectl delete validatingwebhookconfiguration metallb-webhook-configuration --ignore-not-found=true
+    
+    # Eliminar cualquier release de Helm existente
+    helm delete metallb -n metallb-system --ignore-not-found
   ignore_errors: yes
 
-- name: Wait for namespace deletion
+- name: Wait for cleanup
   shell: |
     kubectl wait --for=delete namespace/metallb-system --timeout=60s
   ignore_errors: yes
