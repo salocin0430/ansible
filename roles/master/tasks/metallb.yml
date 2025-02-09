@@ -10,7 +10,7 @@
     kubectl wait --for=delete namespace/metallb-system --timeout=60s
   ignore_errors: yes
 
-# Instalación de MetalLB sin webhooks
+# Instalación de MetalLB usando la versión 0.12.1 (más estable)
 - name: Create metallb namespace
   command: kubectl create namespace metallb-system
 
@@ -19,17 +19,8 @@
     kubectl create secret generic -n metallb-system memberlist \
     --from-literal=secretkey="$(openssl rand -base64 128)"
 
-- name: Download MetalLB manifest
-  get_url:
-    url: https://raw.githubusercontent.com/metallb/metallb/v0.13.7/config/manifests/metallb-native.yaml
-    dest: /tmp/metallb-no-webhooks.yaml
-
-- name: Remove webhook configurations
-  shell: |
-    sed -i '/ValidatingWebhookConfiguration/,$d' /tmp/metallb-no-webhooks.yaml
-
-- name: Apply modified MetalLB manifest
-  command: kubectl apply -f /tmp/metallb-no-webhooks.yaml --validate=false
+- name: Install MetalLB
+  command: kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.12.1/manifests/metallb.yaml
 
 - name: Wait for MetalLB pods
   shell: |
