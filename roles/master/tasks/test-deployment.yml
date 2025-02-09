@@ -35,24 +35,12 @@
           spec:
             containers:
             - name: php-apache
-              image: webdevops/php-apache:7.4
+              image: php:7.4-apache
               ports:
               - containerPort: 80
               volumeMounts:
               - name: webapp-volume
                 mountPath: /var/www/html
-              env:
-                - name: PHP_DISPLAY_ERRORS
-                  value: "1"
-                - name: WEB_DOCUMENT_ROOT
-                  value: "/var/www/html"
-              resources:
-                requests:
-                  memory: "64Mi"
-                  cpu: "250m"
-                limits:
-                  memory: "128Mi"
-                  cpu: "500m"
             volumes:
             - name: webapp-volume
               persistentVolumeClaim:
