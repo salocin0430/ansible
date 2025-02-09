@@ -23,8 +23,8 @@
   shell: |
     # Descargar el manifiesto
     wget https://raw.githubusercontent.com/metallb/metallb/v0.13.7/config/manifests/metallb-native.yaml -O /tmp/metallb-no-webhooks.yaml
-    # Eliminar las secciones de webhook
-    sed -i '/ValidatingWebhookConfiguration/,$d' /tmp/metallb-no-webhooks.yaml
+    # Eliminar las secciones de webhook (más específico)
+    sed -i '/apiVersion: admissionregistration.k8s.io/,$d' /tmp/metallb-no-webhooks.yaml
 
 - name: Apply modified MetalLB manifest
   command: kubectl apply -f /tmp/metallb-no-webhooks.yaml --validate=false
