@@ -1,0 +1,37 @@
+---
+- name: Initialize Kubernetes cluster
+  command: >
+    kubeadm init
+    --pod-network-cidr={{ pod_network_cidr }}
+    --apiserver-advertise-address={{ apiserver_advertise_address }}
+    --ignore-preflight-errors=all
+  register: kubeadm_init
+  args:
+    creates: /etc/kubernetes/admin.conf
+
+- name: Create .kube directory
+  file:
+    path: /root/.kube
+    state: directory
+    mode: '0755'
+
+- name: Copy admin.conf to root's kube config
+  copy:
+    src: /etc/kubernetes/admin.conf
+    dest: /root/.kube/config
+    remote_src: yes
+    mode: '0644'
+
+- name: Install Flannel CNI
+  command: kubectl apply -f https://raw.githubusercontent.com/flannel-io/flannel/master/Documentation/kube-flannel.yml
+  
+- name: Get join command
+  command: kubeadm token create --print-join-command
+  register: join_command_raw
+
+- name: Store join command
+  set_fact:
+    join_command: "{{ join_command_raw.stdout_lines[0] }}"
+
+- name: Include MetalLB tasks
+  include_tasks: metallb.yml 

@@ -1,0 +1,85 @@
+---
+- name: Disable SELinux
+  selinux:
+    state: disabled
+
+- name: Disable swap
+  command: swapoff -a
+  changed_when: false
+
+- name: Remove swap from fstab
+  replace:
+    path: /etc/fstab
+    regexp: '^([^#].*?\sswap\s+sw\s+.*)$'
+    replace: '# \1'
+
+- name: Load required kernel modules
+  copy:
+    dest: /etc/modules-load.d/k8s.conf
+    content: |
+      overlay
+      br_netfilter
+
+- name: Load kernel modules
+  modprobe:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - overlay
+    - br_netfilter
+
+- name: Set kernel parameters
+  sysctl:
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
+    state: present
+    sysctl_file: /etc/sysctl.d/k8s.conf
+  loop:
+    - { name: 'net.bridge.bridge-nf-call-iptables', value: '1' }
+    - { name: 'net.bridge.bridge-nf-call-ip6tables', value: '1' }
+    - { name: 'net.ipv4.ip_forward', value: '1' }
+
+- name: Add Docker repository
+  yum_repository:
+    name: docker
+    description: Docker CE Repository
+    baseurl: https://download.docker.com/linux/centos/$releasever/$basearch/stable
+    gpgcheck: no
+
+- name: Install containerd
+  dnf:
+    name: containerd.io
+    state: present
+
+- name: Configure containerd
+  shell: |
+    mkdir -p /etc/containerd
+    containerd config default | tee /etc/containerd/config.toml
+    sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' /etc/containerd/config.toml
+
+- name: Start and enable containerd
+  systemd:
+    name: containerd
+    state: started
+    enabled: yes
+
+- name: Add Kubernetes repository
+  yum_repository:
+    name: kubernetes
+    description: Kubernetes Repository
+    baseurl: https://mirrors.aliyun.com/kubernetes/yum/repos/kubernetes-el7-aarch64/
+    gpgcheck: no
+
+- name: Install Kubernetes packages
+  dnf:
+    name:
+      - kubelet
+      - kubeadm
+      - kubectl
+    state: present
+
+- name: Enable kubelet
+  systemd:
+    name: kubelet
+    enabled: yes
+    state: started 

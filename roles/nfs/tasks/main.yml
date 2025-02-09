@@ -1,0 +1,40 @@
+---
+- name: Install NFS server packages
+  dnf:
+    name: nfs-utils
+    state: present
+
+- name: Create NFS directory
+  file:
+    path: "{{ nfs_path }}"
+    state: directory
+    mode: '0777'
+
+- name: Configure NFS exports
+  copy:
+    dest: /etc/exports
+    content: "{{ nfs_path }} {{ nfs_exports }}"
+    mode: '0644'
+
+- name: Enable and start NFS services
+  systemd:
+    name: "{{ item }}"
+    state: started
+    enabled: yes
+  loop:
+    - nfs-server
+    - rpcbind
+
+- name: Export NFS filesystem
+  command: exportfs -av
+
+- name: Configure firewall for NFS
+  firewalld:
+    service: "{{ item }}"
+    permanent: yes
+    state: enabled
+  loop:
+    - nfs
+    - mountd
+    - rpc-bind
+  notify: reload firewall 

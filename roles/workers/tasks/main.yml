@@ -1,0 +1,5 @@
+---
+- name: Join cluster
+  command: "{{ hostvars['k8s-master']['join_command'] }}"
+  args:
+    creates: /etc/kubernetes/kubelet.conf 

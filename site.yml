@@ -1,0 +1,28 @@
+---
+- name: Configure common settings for all nodes
+  hosts: k8s_cluster:nfs
+  roles:
+    - common
+
+- name: Configure NFS server
+  hosts: nfs
+  roles:
+    - nfs
+
+- name: Configure Kubernetes master node
+  hosts: master
+  roles:
+    - master
+
+- name: Configure Kubernetes worker nodes
+  hosts: workers
+  roles:
+    - workers
+
+- name: Install NFS client on Kubernetes nodes
+  hosts: k8s_cluster
+  tasks:
+    - name: Install NFS client
+      dnf:
+        name: nfs-utils
+        state: present 

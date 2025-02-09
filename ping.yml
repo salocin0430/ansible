@@ -1,0 +1,6 @@
+---
+- name: Verificar conectividad con todos los nodos
+  hosts: all
+  tasks:
+    - name: Ping test
+      ping: 

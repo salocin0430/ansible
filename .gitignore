@@ -1,0 +1,12 @@
+# Archivos temporales
+*.retry
+*.swp
+*.swo
+*~
+
+# Directorios de Python/Ansible
+__pycache__/
+*.pyc
+
+# Archivos de sistema
+.DS_Store 

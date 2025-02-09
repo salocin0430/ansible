@@ -1,0 +1,30 @@
+---
+- name: Create metallb namespace
+  command: kubectl create namespace metallb-system
+  ignore_errors: yes
+
+- name: Create memberlist secret
+  shell: |
+    kubectl create secret generic -n metallb-system memberlist \
+    --from-literal=secretkey="$(openssl rand -base64 128)"
+  ignore_errors: yes
+
+- name: Install MetalLB
+  command: kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.13.7/config/manifests/metallb-native.yaml
+  ignore_errors: yes
+
+- name: Wait for MetalLB pods to be ready
+  shell: |
+    kubectl wait --namespace metallb-system \
+      --for=condition=ready pod \
+      --selector=app=metallb \
+      --timeout=90s
+  ignore_errors: yes
+
+- name: Configure MetalLB
+  template:
+    src: metallb-config.yaml.j2
+    dest: /tmp/metallb-config.yaml
+  
+- name: Apply MetalLB configuration
+  command: kubectl apply -f /tmp/metallb-config.yaml 

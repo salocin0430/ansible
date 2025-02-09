@@ -1,0 +1,59 @@
+# En el nuevo servidor Ansible (clonado del master)
+# 1. Limpia la configuración de Kubernetes
+kubeadm reset -f
+systemctl stop kubelet
+systemctl disable kubelet
+dnf remove -y kubeadm kubectl kubelet kubernetes-cni
+rm -rf /etc/kubernetes/
+rm -rf /var/lib/kubelet/
+rm -rf /var/lib/etcd/
+rm -rf ~/.kube/
+
+# 2. Instala Ansible
+dnf install -y epel-release
+dnf install -y ansible
+
+# 3. Configura el hostname para el servidor Ansible
+hostnamectl set-hostname ansible-server
+
+# 4. Edita el /etc/hosts para incluir todos los nodos
+cat << EOF >> /etc/hosts
+192.168.1.3 ansible-server
+192.168.1.4 k8s-master
+192.168.1.5 k8s-worker1
+192.168.1.6 k8s-worker2
+192.168.1.7 nfs-server
+EOF
+
+
+# En el nodo master clonado
+kubeadm reset -f
+systemctl stop kubelet
+systemctl disable kubelet
+rm -rf /etc/kubernetes/
+rm -rf /var/lib/kubelet/
+rm -rf /var/lib/etcd/
+rm -rf ~/.kube/
+
+
+# En cada worker clonado
+kubeadm reset -f
+systemctl stop kubelet
+systemctl disable kubelet
+rm -rf /etc/kubernetes/
+rm -rf /var/lib/kubelet/
+rm -rf ~/.kube/
+
+
+# En el servidor NFS clonado
+rm -rf /srv/nfs/*
+systemctl stop nfs-server
+systemctl disable nfs-server
+
+
+
+commands
+./ssh-setup.sh
+ansible-playbook ping.yml
+
+

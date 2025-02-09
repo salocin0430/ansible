@@ -1,0 +1,15 @@
+---
+# Kubernetes configuration
+kubernetes_version: "1.28.2"
+pod_network_cidr: "10.244.0.0/16"
+apiserver_advertise_address: "192.168.1.4"
+
+# Container runtime
+container_runtime: containerd
+
+# MetalLB configuration
+metallb_ip_range: "192.168.1.240-192.168.1.250"
+
+# NFS configuration
+nfs_path: "/srv/nfs"
+nfs_exports: "*(rw,sync,no_subtree_check,no_root_squash)" 
