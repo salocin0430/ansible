@@ -41,4 +41,7 @@
   ignore_errors: yes
 
 - name: Include NFS test tasks
-  include_tasks: nfs-test.yml 
+  include_tasks: nfs-test.yml
+
+- name: Include test deployment
+  include_tasks: test-deployment.yml 
