@@ -27,7 +27,7 @@
     sed -i '/ValidatingWebhookConfiguration/,$d' /tmp/metallb-no-webhooks.yaml
 
 - name: Apply modified MetalLB manifest
-  command: kubectl apply -f /tmp/metallb-no-webhooks.yaml
+  command: kubectl apply -f /tmp/metallb-no-webhooks.yaml --validate=false
 
 - name: Wait for MetalLB deployment
   shell: |
@@ -61,7 +61,7 @@
         - first-pool
 
 - name: Apply MetalLB configuration
-  command: kubectl apply -f /tmp/metallb-config.yaml
+  command: kubectl apply -f /tmp/metallb-config.yaml --validate=false
 
 - name: Show MetalLB status
   shell: |
