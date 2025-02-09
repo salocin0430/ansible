@@ -31,6 +31,36 @@
           requests:
             storage: 1Gi
       ---
+      # ConfigMap para nginx.conf
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: nginx-config
+      data:
+        nginx.conf: |
+          user  nginx;
+          worker_processes  auto;
+          error_log  /var/log/nginx/error.log notice;
+          pid        /var/run/nginx.pid;
+          events {
+              worker_connections  1024;
+          }
+          http {
+              include       /etc/nginx/mime.types;
+              default_type  application/octet-stream;
+              server {
+                  listen       80;
+                  server_name  localhost;
+                  location / {
+                      root   /usr/share/nginx/html;
+                      index  index.html index.htm;
+                      sub_filter '$(hostname)' '$hostname';
+                      sub_filter '$(date)' '$time_local';
+                      sub_filter_once off;
+                  }
+              }
+          }
+      ---
       # Deployment de NGINX
       apiVersion: apps/v1
       kind: Deployment
@@ -54,10 +84,16 @@
               volumeMounts:
               - name: web-content
                 mountPath: /usr/share/nginx/html
+              - name: nginx-config
+                mountPath: /etc/nginx/nginx.conf
+                subPath: nginx.conf
             volumes:
             - name: web-content
               persistentVolumeClaim:
                 claimName: web-pvc
+            - name: nginx-config
+              configMap:
+                name: nginx-config
       ---
       # Service tipo LoadBalancer
       apiVersion: v1
@@ -97,6 +133,7 @@
   shell: |
     # Crear el contenido en el NFS directamente
     mkdir -p {{ nfs_path }}/html
+    chmod 755 {{ nfs_path }}/html
     cat > {{ nfs_path }}/html/index.html << EOF
     <!DOCTYPE html>
     <html>
@@ -112,23 +149,14 @@
         <div class="info">
             <p><strong>Storage:</strong> This page is served from NFS storage</p>
             <p><strong>LoadBalancer:</strong> Exposed via MetalLB</p>
-            <p><strong>Pod:</strong> <span id="hostname">Loading...</span></p>
-            <p><strong>Time:</strong> <span id="time">Loading...</span></p>
+            <p><strong>Pod ID:</strong> \$(hostname)</p>
+            <p><strong>Time:</strong> \$(date)</p>
         </div>
-        <script>
-            fetch('/hostname')
-                .then(response => response.text())
-                .then(data => document.getElementById('hostname').textContent = data);
-            
-            function updateTime() {
-                document.getElementById('time').textContent = new Date().toLocaleString();
-            }
-            updateTime();
-            setInterval(updateTime, 1000);
-        </script>
     </body>
     </html>
     EOF
+    chmod 644 {{ nfs_path }}/html/index.html
+    chown -R nobody:nobody {{ nfs_path }}/html
   delegate_to: nfs-server
 
 - name: Create hostname script
@@ -147,6 +175,171 @@
   until: service_ip.stdout != ""
   retries: 30
   delay: 10
+
+- name: Show test information
+  debug:
+    msg: |
+      Web application has been deployed!
+      You can access it at: http://{{ service_ip.stdout }}
+      
+      To test load balancing, try refreshing the page multiple times.
+      You should see different pod names as the requests are distributed.
+
+- name: Create nginx config
+  copy:
+    dest: /tmp/nginx.conf
+    content: |
+      user  nginx;
+      worker_processes  auto;
+      error_log  /var/log/nginx/error.log notice;
+      pid        /var/run/nginx.pid;
+      events {
+          worker_connections  1024;
+      }
+      http {
+          include       /etc/nginx/mime.types;
+          default_type  application/octet-stream;
+          server {
+              listen       80;
+              server_name  localhost;
+              location / {
+                  root   /usr/share/nginx/html;
+                  index  index.html index.htm;
+                  sub_filter '$(hostname)' '$hostname';
+                  sub_filter '$(date)' '$time_local';
+                  sub_filter_once off;
+              }
+          }
+      }
+
+- name: Update deployment with nginx config
+  copy:
+    dest: /tmp/test-web.yaml
+    content: |
+      # PersistentVolume para web
+      apiVersion: v1
+      kind: PersistentVolume
+      metadata:
+        name: web-pv
+      spec:
+        capacity:
+          storage: 1Gi
+        accessModes:
+          - ReadWriteMany
+        persistentVolumeReclaimPolicy: Retain
+        nfs:
+          path: {{ nfs_path }}/html
+          server: {{ hostvars['nfs-server'].ansible_host }}
+      ---
+      # PersistentVolumeClaim para web
+      apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
+        name: web-pvc
+      spec:
+        accessModes:
+          - ReadWriteMany
+        resources:
+          requests:
+            storage: 1Gi
+      ---
+      # ConfigMap para nginx.conf
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: nginx-config
+      data:
+        nginx.conf: |
+          user  nginx;
+          worker_processes  auto;
+          error_log  /var/log/nginx/error.log notice;
+          pid        /var/run/nginx.pid;
+          events {
+              worker_connections  1024;
+          }
+          http {
+              include       /etc/nginx/mime.types;
+              default_type  application/octet-stream;
+              server {
+                  listen       80;
+                  server_name  localhost;
+                  location / {
+                      root   /usr/share/nginx/html;
+                      index  index.html index.htm;
+                      sub_filter '$(hostname)' '$hostname';
+                      sub_filter '$(date)' '$time_local';
+                      sub_filter_once off;
+                  }
+              }
+          }
+      ---
+      # Deployment de NGINX
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: web-nginx
+      spec:
+        replicas: 3
+        selector:
+          matchLabels:
+            app: web-nginx
+        template:
+          metadata:
+            labels:
+              app: web-nginx
+          spec:
+            containers:
+            - name: nginx
+              image: nginx
+              ports:
+              - containerPort: 80
+              volumeMounts:
+              - name: web-content
+                mountPath: /usr/share/nginx/html
+              - name: nginx-config
+                mountPath: /etc/nginx/nginx.conf
+                subPath: nginx.conf
+            volumes:
+            - name: web-content
+              persistentVolumeClaim:
+                claimName: web-pvc
+            - name: nginx-config
+              configMap:
+                name: nginx-config
+      ---
+      # Service tipo LoadBalancer
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: web-service
+        annotations:
+          metallb.universe.tf/address-pool: first-pool
+      spec:
+        type: LoadBalancer
+        ports:
+        - port: 80
+          targetPort: 80
+        selector:
+          app: web-nginx
+
+- name: Apply updated deployment
+  command: kubectl apply -f /tmp/test-web.yaml
+
+- name: Wait for deployment
+  shell: |
+    kubectl rollout status deployment/web-nginx
+  register: deployment_status
+  until: deployment_status.rc == 0
+  retries: 30
+  delay: 10
+
+- name: Wait for pods to be ready
+  shell: |
+    kubectl wait --for=condition=ready pod -l app=web-nginx --timeout=120s
+  register: pods_ready
+  retries: 30
+  delay: 10
+  until: pods_ready.rc == 0
 
 - name: Show test information
   debug:
