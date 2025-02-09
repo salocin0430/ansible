@@ -34,4 +34,8 @@
     join_command: "{{ join_command_raw.stdout_lines[0] }}"
 
 - name: Include MetalLB tasks
-  include_tasks: metallb.yml 
+  include_tasks: metallb.yml
+
+- name: Remove master node taint
+  command: kubectl taint nodes --all node-role.kubernetes.io/control-plane-
+  ignore_errors: yes 

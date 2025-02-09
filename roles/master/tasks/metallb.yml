@@ -11,6 +11,17 @@
     kubectl wait --for=delete namespace/metallb-system --timeout=60s
   ignore_errors: yes
 
+# Verificar el estado del cluster antes de instalar
+- name: Check cluster status
+  shell: |
+    kubectl get nodes -o jsonpath='{.items[*].status.conditions[?(@.type=="Ready")].status}'
+  register: nodes_status
+
+- name: Fail if nodes are not ready
+  fail:
+    msg: "Nodes are not in Ready state"
+  when: "'True' not in nodes_status.stdout"
+
 # Ahora instalamos MetalLB limpiamente
 - name: Create metallb namespace
   command: kubectl create namespace metallb-system
@@ -23,14 +34,29 @@
 - name: Install MetalLB
   command: kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.13.7/config/manifests/metallb-native.yaml
 
-- name: Wait for MetalLB pods
+- name: Create controller patch
+  template:
+    src: metallb-controller-patch.yaml.j2
+    dest: /tmp/metallb-controller-patch.yaml
+
+- name: Apply controller patch
+  command: kubectl patch deployment -n metallb-system controller --patch-file /tmp/metallb-controller-patch.yaml
+
+- name: Wait for MetalLB controller deployment
   shell: |
-    kubectl -n metallb-system wait --for=condition=ready pod --selector=app=metallb --timeout=180s
-  register: wait_result
-  until: wait_result.rc == 0
+    kubectl -n metallb-system rollout status deployment controller --timeout=180s
+  register: rollout_status
+  until: rollout_status.rc == 0
   retries: 30
   delay: 10
-  ignore_errors: yes
+
+- name: Wait for MetalLB speaker daemonset
+  shell: |
+    kubectl -n metallb-system rollout status daemonset speaker --timeout=180s
+  register: speaker_status
+  until: speaker_status.rc == 0
+  retries: 30
+  delay: 10
 
 - name: Configure MetalLB
   template:
@@ -40,4 +66,9 @@
 - name: Apply MetalLB configuration
   command: kubectl apply -f /tmp/metallb-config.yaml
   retries: 3
-  delay: 10 
+  delay: 10
+
+- name: Verify MetalLB status
+  shell: |
+    kubectl get pods -n metallb-system -o wide
+  register: metallb_status 
