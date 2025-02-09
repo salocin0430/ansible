@@ -3,7 +3,6 @@
 - name: Remove existing MetalLB installation
   shell: |
     kubectl delete namespace metallb-system --ignore-not-found=true
-    kubectl delete -f https://raw.githubusercontent.com/metallb/metallb/v0.13.7/config/manifests/metallb-native.yaml --ignore-not-found=true
   ignore_errors: yes
 
 - name: Wait for namespace deletion
@@ -11,18 +10,7 @@
     kubectl wait --for=delete namespace/metallb-system --timeout=60s
   ignore_errors: yes
 
-# Verificar el estado del cluster antes de instalar
-- name: Check cluster status
-  shell: |
-    kubectl get nodes -o jsonpath='{.items[*].status.conditions[?(@.type=="Ready")].status}'
-  register: nodes_status
-
-- name: Fail if nodes are not ready
-  fail:
-    msg: "Nodes are not in Ready state"
-  when: "'True' not in nodes_status.stdout"
-
-# Instalamos MetalLB usando manifest simplificado
+# Instalación de MetalLB sin webhooks
 - name: Create metallb namespace
   command: kubectl create namespace metallb-system
 
@@ -31,12 +19,17 @@
     kubectl create secret generic -n metallb-system memberlist \
     --from-literal=secretkey="$(openssl rand -base64 128)"
 
-- name: Install MetalLB components
-  command: kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.13.7/config/manifests/metallb-native.yaml
-  register: install_result
-  until: install_result.rc == 0
-  retries: 3
-  delay: 10
+- name: Download MetalLB manifest
+  get_url:
+    url: https://raw.githubusercontent.com/metallb/metallb/v0.13.7/config/manifests/metallb-native.yaml
+    dest: /tmp/metallb-no-webhooks.yaml
+
+- name: Remove webhook configurations
+  shell: |
+    sed -i '/ValidatingWebhookConfiguration/,$d' /tmp/metallb-no-webhooks.yaml
+
+- name: Apply modified MetalLB manifest
+  command: kubectl apply -f /tmp/metallb-no-webhooks.yaml
 
 - name: Wait for MetalLB pods
   shell: |
@@ -47,8 +40,8 @@
   delay: 10
   ignore_errors: yes
 
-# Configuración simplificada de MetalLB
-- name: Create simplified MetalLB config
+# Configuración de MetalLB
+- name: Create MetalLB config
   copy:
     dest: /tmp/metallb-config.yaml
     content: |
@@ -70,11 +63,8 @@
         ipAddressPools:
         - first-pool
 
-- name: Apply MetalLB configuration with increased timeout
-  shell: |
-    kubectl apply -f /tmp/metallb-config.yaml --timeout=120s
-  retries: 5
-  delay: 30
+- name: Apply MetalLB configuration
+  command: kubectl apply -f /tmp/metallb-config.yaml
 
 - name: Verify MetalLB status
   shell: |
