@@ -44,4 +44,6 @@
   include_tasks: nfs-test.yml
 
 - name: Include test deployment
-  include_tasks: test-deployment.yml 
+  include_tasks: test-deployment.yml
+  tags: 
+    - test-deploy 
