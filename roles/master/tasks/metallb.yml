@@ -1,8 +1,17 @@
 ---
-# Primero limpiamos la instalación existente
+# Limpieza completa de MetalLB
 - name: Remove existing MetalLB installation
   shell: |
+    # Eliminar namespace
     kubectl delete namespace metallb-system --ignore-not-found=true
+    # Eliminar CRDs
+    kubectl delete crd addresspools.metallb.io --ignore-not-found=true
+    kubectl delete crd bfdprofiles.metallb.io --ignore-not-found=true
+    kubectl delete crd bgpadvertisements.metallb.io --ignore-not-found=true
+    kubectl delete crd bgppeers.metallb.io --ignore-not-found=true
+    kubectl delete crd communities.metallb.io --ignore-not-found=true
+    kubectl delete crd ipaddresspools.metallb.io --ignore-not-found=true
+    kubectl delete crd l2advertisements.metallb.io --ignore-not-found=true
   ignore_errors: yes
 
 - name: Wait for namespace deletion
@@ -25,7 +34,8 @@
   command: |
     helm install metallb metallb/metallb \
       --create-namespace \
-      --namespace metallb-system
+      --namespace metallb-system \
+      --wait
 
 - name: Wait for MetalLB pods
   shell: |
