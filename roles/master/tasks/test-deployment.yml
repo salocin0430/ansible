@@ -37,7 +37,7 @@
               fsGroup: 33
             containers:
             - name: php-apache
-              image: php:7.4-apache
+              image: webdevops/php-apache:7.4
               ports:
               - containerPort: 80
               volumeMounts:
