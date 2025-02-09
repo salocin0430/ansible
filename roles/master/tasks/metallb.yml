@@ -29,23 +29,28 @@
     url: https://raw.githubusercontent.com/metallb/metallb/v0.13.7/config/manifests/metallb-native.yaml
     dest: /tmp/metallb.yaml
 
-- name: Remove webhook configurations from manifest
-  shell: |
-    sed -i '/---/q' /tmp/metallb.yaml
-
-- name: Apply modified MetalLB manifest
+- name: Apply MetalLB manifest
   command: kubectl apply -f /tmp/metallb.yaml
 
-- name: Wait for MetalLB pods
+- name: Wait for controller deployment
   shell: |
-    kubectl -n metallb-system wait --for=condition=ready pod --selector=app=metallb --timeout=180s
-  register: wait_result
-  until: wait_result.rc == 0
+    kubectl -n metallb-system rollout status deployment controller
+  register: controller_status
+  until: controller_status.rc == 0
   retries: 30
   delay: 10
   ignore_errors: yes
 
-# Configuración de MetalLB sin webhooks
+- name: Wait for speaker daemonset
+  shell: |
+    kubectl -n metallb-system rollout status daemonset speaker
+  register: speaker_status
+  until: speaker_status.rc == 0
+  retries: 30
+  delay: 10
+  ignore_errors: yes
+
+# Configuración de MetalLB
 - name: Create MetalLB config
   copy:
     dest: /tmp/metallb-config.yaml
@@ -74,5 +79,10 @@
 
 - name: Verify MetalLB status
   shell: |
-    kubectl get pods -n metallb-system -o wide
+    echo "Pod Status:"
+    kubectl get pods -n metallb-system
+    echo "Deployment Status:"
+    kubectl get deployment -n metallb-system
+    echo "DaemonSet Status:"
+    kubectl get daemonset -n metallb-system
   register: metallb_status 
