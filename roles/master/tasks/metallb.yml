@@ -2,23 +2,12 @@
 # Limpieza completa de MetalLB
 - name: Remove existing MetalLB installation
   shell: |
-    # Eliminar namespace
+    # Eliminar namespace y recursos
     kubectl delete namespace metallb-system --ignore-not-found=true
+    kubectl delete -f https://raw.githubusercontent.com/metallb/metallb/v0.13.7/config/manifests/metallb-native.yaml --ignore-not-found=true
     
-    # Eliminar CRDs
-    kubectl delete crd addresspools.metallb.io --ignore-not-found=true
-    kubectl delete crd bfdprofiles.metallb.io --ignore-not-found=true
-    kubectl delete crd bgpadvertisements.metallb.io --ignore-not-found=true
-    kubectl delete crd bgppeers.metallb.io --ignore-not-found=true
-    kubectl delete crd communities.metallb.io --ignore-not-found=true
-    kubectl delete crd ipaddresspools.metallb.io --ignore-not-found=true
-    kubectl delete crd l2advertisements.metallb.io --ignore-not-found=true
-    
-    # Eliminar webhook
+    # Eliminar webhooks
     kubectl delete validatingwebhookconfiguration metallb-webhook-configuration --ignore-not-found=true
-    
-    # Eliminar cualquier release de Helm existente
-    helm delete metallb -n metallb-system --ignore-not-found
   ignore_errors: yes
 
 - name: Wait for cleanup
@@ -26,34 +15,37 @@
     kubectl wait --for=delete namespace/metallb-system --timeout=60s
   ignore_errors: yes
 
-# Verificar que Helm está instalado
-- name: Check if Helm is installed
-  command: which helm
-  changed_when: false
+# Instalación básica de MetalLB
+- name: Create metallb namespace
+  command: kubectl create namespace metallb-system
 
-# Instalación de MetalLB usando Helm
-- name: Add Helm repo
+- name: Create memberlist secret
   shell: |
-    helm repo add metallb https://metallb.github.io/metallb
-    helm repo update
+    kubectl create secret generic -n metallb-system memberlist \
+    --from-literal=secretkey="$(openssl rand -base64 128)"
 
-- name: Install MetalLB via Helm
-  command: |
-    helm install metallb metallb/metallb \
-      --create-namespace \
-      --namespace metallb-system \
-      --wait
+- name: Download MetalLB manifest
+  get_url:
+    url: https://raw.githubusercontent.com/metallb/metallb/v0.13.7/config/manifests/metallb-native.yaml
+    dest: /tmp/metallb.yaml
+
+- name: Remove webhook configurations from manifest
+  shell: |
+    sed -i '/---/q' /tmp/metallb.yaml
+
+- name: Apply modified MetalLB manifest
+  command: kubectl apply -f /tmp/metallb.yaml
 
 - name: Wait for MetalLB pods
   shell: |
-    kubectl -n metallb-system wait --for=condition=ready pod --selector=app.kubernetes.io/name=metallb --timeout=180s
+    kubectl -n metallb-system wait --for=condition=ready pod --selector=app=metallb --timeout=180s
   register: wait_result
   until: wait_result.rc == 0
   retries: 30
   delay: 10
   ignore_errors: yes
 
-# Configuración de MetalLB
+# Configuración de MetalLB sin webhooks
 - name: Create MetalLB config
   copy:
     dest: /tmp/metallb-config.yaml
@@ -77,7 +69,8 @@
         - first-pool
 
 - name: Apply MetalLB configuration
-  command: kubectl apply -f /tmp/metallb-config.yaml
+  shell: |
+    kubectl apply -f /tmp/metallb-config.yaml --validate=false
 
 - name: Verify MetalLB status
   shell: |
