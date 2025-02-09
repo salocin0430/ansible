@@ -33,6 +33,8 @@
             labels:
               app: php-webapp
           spec:
+            securityContext:
+              fsGroup: 33
             containers:
             - name: php-apache
               image: php:7.4-apache
@@ -44,7 +46,6 @@
               securityContext:
                 runAsUser: 33  # www-data user ID
                 runAsGroup: 33  # www-data group ID
-                fsGroup: 33
             volumes:
             - name: webapp-volume
               persistentVolumeClaim:
