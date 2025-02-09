@@ -15,27 +15,42 @@
   retries: 12
   delay: 5
 
-- name: Create test pod to verify NFS
-  command: |
-    kubectl run nfs-test --image=busybox -- sleep 3600
-  ignore_errors: yes
+# Eliminar el pod existente si existe
+- name: Delete existing test pod if any
+  command: kubectl delete pod nfs-test --ignore-not-found=true
+
+- name: Create test pod with NFS mount
+  copy:
+    dest: /tmp/test-pod.yaml
+    content: |
+      apiVersion: v1
+      kind: Pod
+      metadata:
+        name: nfs-test
+      spec:
+        containers:
+        - name: busybox
+          image: busybox
+          command: ["sleep", "3600"]
+          volumeMounts:
+          - name: nfs-volume
+            mountPath: /mnt
+        volumes:
+        - name: nfs-volume
+          persistentVolumeClaim:
+            claimName: nfs-pvc-test
+
+- name: Apply test pod
+  command: kubectl apply -f /tmp/test-pod.yaml
 
 - name: Wait for test pod to be ready
   shell: |
     kubectl wait --for=condition=ready pod/nfs-test --timeout=60s
-  register: pod_status
-  until: pod_status.rc == 0
-  retries: 6
-  delay: 10
-
-- name: Mount NFS volume in test pod
-  shell: |
-    kubectl exec nfs-test -- mount {{ hostvars['nfs-server'].ansible_host }}:{{ nfs_path }} /mnt
-  ignore_errors: yes
 
 - name: Test NFS write access
   shell: |
     kubectl exec nfs-test -- sh -c 'echo "test" > /mnt/test.txt'
+  register: write_test
   ignore_errors: yes
 
 - name: Show test results
@@ -46,8 +61,8 @@
     kubectl get pvc
     echo "Pod Status:"
     kubectl get pod nfs-test
-    echo "NFS Test File:"
-    kubectl exec nfs-test -- cat /mnt/test.txt
+    echo "NFS Test File Content:"
+    kubectl exec nfs-test -- cat /mnt/test.txt || echo "File not found"
   register: test_results
 
 - name: Display test results
