@@ -64,6 +64,8 @@
       kind: Service
       metadata:
         name: web-service
+        annotations:
+          metallb.universe.tf/address-pool: first-pool
       spec:
         type: LoadBalancer
         ports:
