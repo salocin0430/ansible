@@ -1,5 +1,16 @@
 ---
+- name: Get join command from master
+  command: "ssh root@k8s-master 'kubeadm token create --print-join-command'"
+  register: join_command_raw
+  delegate_to: localhost
+  run_once: true
+  when: hostvars['k8s-master'].join_command is not defined
+
+- name: Set join command fact
+  set_fact:
+    join_command: "{{ join_command_raw.stdout if join_command_raw.stdout is defined else hostvars['k8s-master'].join_command }}"
+
 - name: Join cluster
-  command: "{{ hostvars['k8s-master']['join_command'] }}"
+  command: "{{ join_command }}"
   args:
     creates: /etc/kubernetes/kubelet.conf 
