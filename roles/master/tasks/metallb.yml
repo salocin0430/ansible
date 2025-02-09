@@ -29,7 +29,7 @@
     sed -i '/ValidatingWebhookConfiguration/,$d' /tmp/metallb-no-webhooks.yaml
 
 - name: Apply modified MetalLB manifest
-  command: kubectl apply -f /tmp/metallb-no-webhooks.yaml
+  command: kubectl apply -f /tmp/metallb-no-webhooks.yaml --validate=false
 
 - name: Wait for MetalLB pods
   shell: |
