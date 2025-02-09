@@ -2,11 +2,7 @@
 # Limpieza completa de MetalLB
 - name: Remove existing MetalLB installation
   shell: |
-    # Eliminar namespace y recursos
     kubectl delete namespace metallb-system --ignore-not-found=true
-    # Eliminar webhooks
-    kubectl delete validatingwebhookconfiguration metallb-webhook-configuration --ignore-not-found=true
-    kubectl delete -f https://raw.githubusercontent.com/metallb/metallb/v0.13.7/config/manifests/metallb-native.yaml --ignore-not-found=true
   ignore_errors: yes
 
 - name: Wait for cleanup
@@ -14,7 +10,7 @@
     kubectl wait --for=delete namespace/metallb-system --timeout=60s
   ignore_errors: yes
 
-# Instalación básica de MetalLB
+# Instalación básica de MetalLB siguiendo los pasos exactos
 - name: Create metallb namespace
   command: kubectl create namespace metallb-system
 
@@ -23,182 +19,17 @@
     kubectl create secret generic -n metallb-system memberlist \
     --from-literal=secretkey="$(openssl rand -base64 128)"
 
-- name: Create basic MetalLB manifest
-  copy:
-    dest: /tmp/metallb-basic.yaml
-    content: |
-      # CRDs primero
-      apiVersion: apiextensions.k8s.io/v1
-      kind: CustomResourceDefinition
-      metadata:
-        name: ipaddresspools.metallb.io
-      spec:
-        group: metallb.io
-        names:
-          kind: IPAddressPool
-          plural: ipaddresspools
-          singular: ipaddresspool
-        scope: Namespaced
-        versions:
-          - name: v1beta1
-            served: true
-            storage: true
-            schema:
-              openAPIV3Schema:
-                type: object
-                properties:
-                  spec:
-                    type: object
-                    properties:
-                      addresses:
-                        type: array
-                        items:
-                          type: string
-      ---
-      apiVersion: apiextensions.k8s.io/v1
-      kind: CustomResourceDefinition
-      metadata:
-        name: l2advertisements.metallb.io
-      spec:
-        group: metallb.io
-        names:
-          kind: L2Advertisement
-          plural: l2advertisements
-          singular: l2advertisement
-        scope: Namespaced
-        versions:
-          - name: v1beta1
-            served: true
-            storage: true
-            schema:
-              openAPIV3Schema:
-                type: object
-                properties:
-                  spec:
-                    type: object
-                    properties:
-                      ipAddressPools:
-                        type: array
-                        items:
-                          type: string
-      ---
-      # Service Accounts
-      apiVersion: v1
-      kind: ServiceAccount
-      metadata:
-        name: controller
-        namespace: metallb-system
-      ---
-      apiVersion: v1
-      kind: ServiceAccount
-      metadata:
-        name: speaker
-        namespace: metallb-system
-      ---
-      # RBAC
-      apiVersion: rbac.authorization.k8s.io/v1
-      kind: ClusterRole
-      metadata:
-        name: metallb-system:controller
-      rules:
-        - apiGroups: [""]
-          resources: ["services"]
-          verbs: ["get", "list", "watch"]
-        - apiGroups: ["metallb.io"]
-          resources: ["*"]
-          verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-      ---
-      apiVersion: rbac.authorization.k8s.io/v1
-      kind: ClusterRole
-      metadata:
-        name: metallb-system:speaker
-      rules:
-        - apiGroups: [""]
-          resources: ["services", "endpoints", "nodes"]
-          verbs: ["get", "list", "watch"]
-      ---
-      apiVersion: rbac.authorization.k8s.io/v1
-      kind: ClusterRoleBinding
-      metadata:
-        name: metallb-system:controller
-      subjects:
-        - kind: ServiceAccount
-          name: controller
-          namespace: metallb-system
-      roleRef:
-        apiGroup: rbac.authorization.k8s.io
-        kind: ClusterRole
-        name: metallb-system:controller
-      ---
-      apiVersion: rbac.authorization.k8s.io/v1
-      kind: ClusterRoleBinding
-      metadata:
-        name: metallb-system:speaker
-      subjects:
-        - kind: ServiceAccount
-          name: speaker
-          namespace: metallb-system
-      roleRef:
-        apiGroup: rbac.authorization.k8s.io
-        kind: ClusterRole
-        name: metallb-system:speaker
-      ---
-      # Deployments
-      apiVersion: apps/v1
-      kind: Deployment
-      metadata:
-        name: controller
-        namespace: metallb-system
-      spec:
-        selector:
-          matchLabels:
-            app: metallb
-            component: controller
-        template:
-          metadata:
-            labels:
-              app: metallb
-              component: controller
-          spec:
-            containers:
-            - name: controller
-              image: quay.io/metallb/controller:v0.13.7
-              args:
-              - --port=7472
-              ports:
-              - containerPort: 7472
-                name: monitoring
-            serviceAccountName: controller
-      ---
-      apiVersion: apps/v1
-      kind: DaemonSet
-      metadata:
-        name: speaker
-        namespace: metallb-system
-      spec:
-        selector:
-          matchLabels:
-            app: metallb
-            component: speaker
-        template:
-          metadata:
-            labels:
-              app: metallb
-              component: speaker
-          spec:
-            containers:
-            - name: speaker
-              image: quay.io/metallb/speaker:v0.13.7
-              args:
-              - --port=7472
-              ports:
-              - containerPort: 7472
-                name: monitoring
-            serviceAccountName: speaker
-            hostNetwork: true
+- name: Download MetalLB manifest
+  get_url:
+    url: https://raw.githubusercontent.com/metallb/metallb/v0.13.7/config/manifests/metallb-native.yaml
+    dest: /tmp/metallb-no-webhooks.yaml
 
-- name: Apply basic MetalLB manifest
-  command: kubectl apply -f /tmp/metallb-basic.yaml
+- name: Remove webhook configurations
+  shell: |
+    sed -i '/ValidatingWebhookConfiguration/,$d' /tmp/metallb-no-webhooks.yaml
+
+- name: Apply modified MetalLB manifest
+  command: kubectl apply -f /tmp/metallb-no-webhooks.yaml
 
 - name: Wait for MetalLB deployment
   shell: |
@@ -231,29 +62,10 @@
         ipAddressPools:
         - first-pool
 
-- name: Wait for CRDs to be ready
-  shell: |
-    kubectl wait --for=condition=established crd/ipaddresspools.metallb.io --timeout=60s
-    kubectl wait --for=condition=established crd/l2advertisements.metallb.io --timeout=60s
-  register: crd_status
-  retries: 10
-  delay: 5
-  until: crd_status.rc == 0
-
 - name: Apply MetalLB configuration
-  shell: |
-    kubectl apply -f /tmp/metallb-config.yaml
-  register: config_result
-  retries: 5
-  delay: 10
-  until: config_result.rc == 0
+  command: kubectl apply -f /tmp/metallb-config.yaml
 
 - name: Show MetalLB status
   shell: |
-    echo "Pod Status:"
     kubectl get pods -n metallb-system
-    echo "IPAddressPool Status:"
-    kubectl get ipaddresspools -n metallb-system
-    echo "L2Advertisement Status:"
-    kubectl get l2advertisements -n metallb-system
   register: metallb_status 
