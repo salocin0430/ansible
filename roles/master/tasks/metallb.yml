@@ -10,21 +10,21 @@
     kubectl wait --for=delete namespace/metallb-system --timeout=60s
   ignore_errors: yes
 
-# Instalación de MetalLB usando la versión 0.12.1 (más estable)
-- name: Create metallb namespace
-  command: kubectl create namespace metallb-system
-
-- name: Create memberlist secret
+# Instalación de MetalLB usando Helm
+- name: Add Helm repo
   shell: |
-    kubectl create secret generic -n metallb-system memberlist \
-    --from-literal=secretkey="$(openssl rand -base64 128)"
+    helm repo add metallb https://metallb.github.io/metallb
+    helm repo update
 
-- name: Install MetalLB
-  command: kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.12.1/manifests/metallb.yaml
+- name: Install MetalLB via Helm
+  command: |
+    helm install metallb metallb/metallb \
+      --create-namespace \
+      --namespace metallb-system
 
 - name: Wait for MetalLB pods
   shell: |
-    kubectl -n metallb-system wait --for=condition=ready pod --selector=app=metallb --timeout=180s
+    kubectl -n metallb-system wait --for=condition=ready pod --selector=app.kubernetes.io/name=metallb --timeout=180s
   register: wait_result
   until: wait_result.rc == 0
   retries: 30
