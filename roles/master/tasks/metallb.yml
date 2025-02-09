@@ -9,16 +9,28 @@
     --from-literal=secretkey="$(openssl rand -base64 128)"
   ignore_errors: yes
 
-- name: Install MetalLB
-  command: kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.13.7/config/manifests/metallb-native.yaml
+# Descargamos y modificamos el manifiesto de MetalLB
+- name: Download MetalLB manifest
+  get_url:
+    url: https://raw.githubusercontent.com/metallb/metallb/v0.13.7/config/manifests/metallb-native.yaml
+    dest: /tmp/metallb-native.yaml
+
+- name: Remove webhook configurations
+  shell: |
+    sed -i '/ValidatingWebhookConfiguration/,$d' /tmp/metallb-native.yaml
   ignore_errors: yes
 
-- name: Wait for MetalLB pods to be ready
+- name: Install MetalLB
+  command: kubectl apply -f /tmp/metallb-native.yaml
+  ignore_errors: yes
+
+- name: Wait for MetalLB pods
   shell: |
-    kubectl wait --namespace metallb-system \
-      --for=condition=ready pod \
-      --selector=app=metallb \
-      --timeout=90s
+    kubectl -n metallb-system wait --for=condition=ready pod --selector=app=metallb --timeout=180s
+  register: wait_result
+  until: wait_result.rc == 0
+  retries: 30
+  delay: 10
   ignore_errors: yes
 
 - name: Configure MetalLB
@@ -27,4 +39,6 @@
     dest: /tmp/metallb-config.yaml
   
 - name: Apply MetalLB configuration
-  command: kubectl apply -f /tmp/metallb-config.yaml 
+  command: kubectl apply -f /tmp/metallb-config.yaml
+  retries: 3
+  delay: 10 
