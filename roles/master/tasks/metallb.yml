@@ -2,7 +2,11 @@
 # Limpieza completa de MetalLB
 - name: Remove existing MetalLB installation
   shell: |
+    # Eliminar namespace y recursos
     kubectl delete namespace metallb-system --ignore-not-found=true
+    # Eliminar webhooks
+    kubectl delete validatingwebhookconfiguration metallb-webhook-configuration --ignore-not-found=true
+    kubectl delete -f https://raw.githubusercontent.com/metallb/metallb/v0.13.7/config/manifests/metallb-native.yaml --ignore-not-found=true
   ignore_errors: yes
 
 - name: Wait for cleanup
@@ -19,15 +23,77 @@
     kubectl create secret generic -n metallb-system memberlist \
     --from-literal=secretkey="$(openssl rand -base64 128)"
 
-- name: Download and modify MetalLB manifest
-  shell: |
-    # Descargar el manifiesto
-    wget https://raw.githubusercontent.com/metallb/metallb/v0.13.7/config/manifests/metallb-native.yaml -O /tmp/metallb-no-webhooks.yaml
-    # Eliminar las secciones de webhook (más específico)
-    sed -i '/apiVersion: admissionregistration.k8s.io/,$d' /tmp/metallb-no-webhooks.yaml
+- name: Create basic MetalLB manifest
+  copy:
+    dest: /tmp/metallb-basic.yaml
+    content: |
+      apiVersion: v1
+      kind: ServiceAccount
+      metadata:
+        name: controller
+        namespace: metallb-system
+      ---
+      apiVersion: v1
+      kind: ServiceAccount
+      metadata:
+        name: speaker
+        namespace: metallb-system
+      ---
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: controller
+        namespace: metallb-system
+      spec:
+        selector:
+          matchLabels:
+            app: metallb
+            component: controller
+        template:
+          metadata:
+            labels:
+              app: metallb
+              component: controller
+          spec:
+            containers:
+            - name: controller
+              image: quay.io/metallb/controller:v0.13.7
+              args:
+              - --port=7472
+              ports:
+              - containerPort: 7472
+                name: monitoring
+            serviceAccountName: controller
+      ---
+      apiVersion: apps/v1
+      kind: DaemonSet
+      metadata:
+        name: speaker
+        namespace: metallb-system
+      spec:
+        selector:
+          matchLabels:
+            app: metallb
+            component: speaker
+        template:
+          metadata:
+            labels:
+              app: metallb
+              component: speaker
+          spec:
+            containers:
+            - name: speaker
+              image: quay.io/metallb/speaker:v0.13.7
+              args:
+              - --port=7472
+              ports:
+              - containerPort: 7472
+                name: monitoring
+            serviceAccountName: speaker
+            hostNetwork: true
 
-- name: Apply modified MetalLB manifest
-  command: kubectl apply -f /tmp/metallb-no-webhooks.yaml --validate=false
+- name: Apply basic MetalLB manifest
+  command: kubectl apply -f /tmp/metallb-basic.yaml
 
 - name: Wait for MetalLB deployment
   shell: |
@@ -61,7 +127,7 @@
         - first-pool
 
 - name: Apply MetalLB configuration
-  command: kubectl apply -f /tmp/metallb-config.yaml --validate=false
+  command: kubectl apply -f /tmp/metallb-config.yaml
 
 - name: Show MetalLB status
   shell: |
