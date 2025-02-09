@@ -3,11 +3,15 @@
 - name: Clone and setup web application
   shell: |
     cd {{ nfs_path }}
+    rm -rf *  # Limpiar el directorio primero
     git clone https://github.com/salocin0430/COS_PHP_WEB.git
     mv COS_PHP_WEB/* .
     rm -rf COS_PHP_WEB
+    # Ajustar permisos para Apache
+    chown -R www-data:www-data {{ nfs_path }}
     chmod -R 755 {{ nfs_path }}
-    chown -R nobody:nobody {{ nfs_path }}
+    find {{ nfs_path }} -type f -exec chmod 644 {} \;
+    find {{ nfs_path }} -type d -exec chmod 755 {} \;
   delegate_to: nfs-server
 
 # Desplegar la aplicación PHP
@@ -37,6 +41,10 @@
               volumeMounts:
               - name: webapp-volume
                 mountPath: /var/www/html
+              securityContext:
+                runAsUser: 33  # www-data user ID
+                runAsGroup: 33  # www-data group ID
+                fsGroup: 33
             volumes:
             - name: webapp-volume
               persistentVolumeClaim:
