@@ -231,10 +231,29 @@
         ipAddressPools:
         - first-pool
 
+- name: Wait for CRDs to be ready
+  shell: |
+    kubectl wait --for=condition=established crd/ipaddresspools.metallb.io --timeout=60s
+    kubectl wait --for=condition=established crd/l2advertisements.metallb.io --timeout=60s
+  register: crd_status
+  retries: 10
+  delay: 5
+  until: crd_status.rc == 0
+
 - name: Apply MetalLB configuration
-  command: kubectl apply -f /tmp/metallb-config.yaml
+  shell: |
+    kubectl apply -f /tmp/metallb-config.yaml
+  register: config_result
+  retries: 5
+  delay: 10
+  until: config_result.rc == 0
 
 - name: Show MetalLB status
   shell: |
+    echo "Pod Status:"
     kubectl get pods -n metallb-system
+    echo "IPAddressPool Status:"
+    kubectl get ipaddresspools -n metallb-system
+    echo "L2Advertisement Status:"
+    kubectl get l2advertisements -n metallb-system
   register: metallb_status 
