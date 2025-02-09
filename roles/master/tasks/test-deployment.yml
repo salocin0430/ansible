@@ -33,8 +33,6 @@
             labels:
               app: php-webapp
           spec:
-            securityContext:
-              fsGroup: 33
             containers:
             - name: php-apache
               image: webdevops/php-apache:7.4
@@ -43,9 +41,18 @@
               volumeMounts:
               - name: webapp-volume
                 mountPath: /var/www/html
-              securityContext:
-                runAsUser: 33  # www-data user ID
-                runAsGroup: 33  # www-data group ID
+              env:
+                - name: PHP_DISPLAY_ERRORS
+                  value: "1"
+                - name: WEB_DOCUMENT_ROOT
+                  value: "/var/www/html"
+              resources:
+                requests:
+                  memory: "64Mi"
+                  cpu: "250m"
+                limits:
+                  memory: "128Mi"
+                  cpu: "500m"
             volumes:
             - name: webapp-volume
               persistentVolumeClaim:
@@ -67,6 +74,25 @@
 
 - name: Apply PHP deployment
   command: kubectl apply -f /tmp/php-webapp.yaml
+
+- name: Check deployment status
+  shell: |
+    echo "=== Pod Status ==="
+    kubectl get pods -l app=php-webapp -o wide
+    echo "\n=== Pod Logs ==="
+    for pod in $(kubectl get pods -l app=php-webapp -o name); do
+      echo "\nLogs for $pod:"
+      kubectl logs $pod --tail=20
+    done
+    echo "\n=== Pod Description ==="
+    kubectl describe pods -l app=php-webapp
+    echo "\n=== Recent Events ==="
+    kubectl get events --sort-by='.lastTimestamp' | tail -n 20
+  register: debug_info
+
+- name: Display debug information
+  debug:
+    var: debug_info.stdout_lines
 
 - name: Wait for deployment
   shell: |
@@ -92,4 +118,19 @@
       Try the matrix test at: http://{{ service_ip.stdout }}/matrix.php?size=400
       
       To see pod distribution:
-      kubectl get pods -l app=php-webapp -o wide 
+      kubectl get pods -l app=php-webapp -o wide
+
+- name: Check failing pods
+  shell: |
+    echo "=== Failed Pods Logs ==="
+    for pod in $(kubectl get pods -l app=php-webapp | grep -E 'Error|CrashLoopBackOff' | awk '{print $1}'); do
+      echo "\nLogs for $pod:"
+      kubectl logs $pod
+      echo "\nDescription for $pod:"
+      kubectl describe pod $pod
+    done
+  register: pod_logs
+
+- name: Display pod logs
+  debug:
+    var: pod_logs.stdout_lines 
