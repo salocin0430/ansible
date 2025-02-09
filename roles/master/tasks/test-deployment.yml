@@ -1,351 +1,86 @@
 ---
-# Test de aplicación web con NFS y LoadBalancer
-- name: Create test web deployment
+# Clonar y preparar la aplicación web en NFS
+- name: Clone and setup web application
+  shell: |
+    cd {{ nfs_path }}
+    git clone https://github.com/salocin0430/COS_PHP_WEB.git
+    mv COS_PHP_WEB/* .
+    rm -rf COS_PHP_WEB
+    chmod -R 755 {{ nfs_path }}
+    chown -R nobody:nobody {{ nfs_path }}
+  delegate_to: nfs-server
+
+# Desplegar la aplicación PHP
+- name: Create PHP web deployment
   copy:
-    dest: /tmp/test-web.yaml
+    dest: /tmp/php-webapp.yaml
     content: |
-      # PersistentVolume para web
-      apiVersion: v1
-      kind: PersistentVolume
-      metadata:
-        name: web-pv
-      spec:
-        capacity:
-          storage: 1Gi
-        accessModes:
-          - ReadWriteMany
-        persistentVolumeReclaimPolicy: Retain
-        nfs:
-          path: {{ nfs_path }}
-          server: {{ hostvars['nfs-server'].ansible_host }}
-      ---
-      # PersistentVolumeClaim para web
-      apiVersion: v1
-      kind: PersistentVolumeClaim
-      metadata:
-        name: web-pvc
-      spec:
-        accessModes:
-          - ReadWriteMany
-        resources:
-          requests:
-            storage: 1Gi
-      ---
-      # ConfigMap para nginx.conf
-      apiVersion: v1
-      kind: ConfigMap
-      metadata:
-        name: nginx-config
-      data:
-        nginx.conf: |
-          user  nginx;
-          worker_processes  auto;
-          error_log  /var/log/nginx/error.log notice;
-          pid        /var/run/nginx.pid;
-          events {
-              worker_connections  1024;
-          }
-          http {
-              include       /etc/nginx/mime.types;
-              default_type  application/octet-stream;
-              server {
-                  listen       80;
-                  server_name  localhost;
-                  location / {
-                      root   /usr/share/nginx/html;
-                      index  index.html index.htm;
-                      sub_filter '$(hostname)' '$hostname';
-                      sub_filter '$(date)' '$time_local';
-                      sub_filter_once off;
-                  }
-              }
-          }
-      ---
-      # Deployment de NGINX
       apiVersion: apps/v1
       kind: Deployment
       metadata:
-        name: web-nginx
+        name: php-webapp
       spec:
         replicas: 3
         selector:
           matchLabels:
-            app: web-nginx
+            app: php-webapp
         template:
           metadata:
             labels:
-              app: web-nginx
+              app: php-webapp
           spec:
             containers:
-            - name: nginx
-              image: nginx
+            - name: php-apache
+              image: php:7.4-apache
               ports:
               - containerPort: 80
               volumeMounts:
-              - name: web-content
-                mountPath: /usr/share/nginx/html
-              - name: nginx-config
-                mountPath: /etc/nginx/nginx.conf
-                subPath: nginx.conf
+              - name: webapp-volume
+                mountPath: /var/www/html
             volumes:
-            - name: web-content
+            - name: webapp-volume
               persistentVolumeClaim:
-                claimName: web-pvc
-            - name: nginx-config
-              configMap:
-                name: nginx-config
+                claimName: nfs-pvc-test
       ---
-      # Service tipo LoadBalancer
       apiVersion: v1
       kind: Service
       metadata:
-        name: web-service
+        name: php-webapp-service
         annotations:
           metallb.universe.tf/address-pool: first-pool
       spec:
         type: LoadBalancer
+        selector:
+          app: php-webapp
         ports:
         - port: 80
           targetPort: 80
-        selector:
-          app: web-nginx
 
-- name: Apply test web deployment
-  command: kubectl apply -f /tmp/test-web.yaml
+- name: Apply PHP deployment
+  command: kubectl apply -f /tmp/php-webapp.yaml
 
 - name: Wait for deployment
   shell: |
-    kubectl rollout status deployment/web-nginx
+    kubectl rollout status deployment/php-webapp
   register: deployment_status
   until: deployment_status.rc == 0
   retries: 30
   delay: 10
 
-- name: Wait for pods to be ready
-  shell: |
-    kubectl wait --for=condition=ready pod -l app=web-nginx --timeout=120s
-  register: pods_ready
-  retries: 30
-  delay: 10
-  until: pods_ready.rc == 0
-
-- name: Create test web content
-  shell: |
-    # Crear el contenido en el NFS directamente
-    mkdir -p {{ nfs_path }}/html
-    chmod 755 {{ nfs_path }}/html
-    cat > {{ nfs_path }}/html/index.html << EOF
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Test K8s Cluster</title>
-        <style>
-            body { font-family: Arial, sans-serif; margin: 40px; }
-            .info { background: #f0f0f0; padding: 20px; border-radius: 5px; }
-        </style>
-    </head>
-    <body>
-        <h1>Kubernetes Cluster Test</h1>
-        <div class="info">
-            <p><strong>Storage:</strong> This page is served from NFS storage</p>
-            <p><strong>LoadBalancer:</strong> Exposed via MetalLB</p>
-            <p><strong>Pod ID:</strong> \$(hostname)</p>
-            <p><strong>Time:</strong> \$(date)</p>
-        </div>
-    </body>
-    </html>
-    EOF
-    chmod 644 {{ nfs_path }}/html/index.html
-    chown -R nobody:nobody {{ nfs_path }}/html
-  delegate_to: nfs-server
-
-- name: Create hostname script
-  shell: |
-    cat > {{ nfs_path }}/html/hostname << EOF
-    #!/bin/sh
-    hostname
-    EOF
-    chmod +x {{ nfs_path }}/html/hostname
-  delegate_to: nfs-server
-
 - name: Get service IP
   shell: |
-    kubectl get service web-service -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+    kubectl get service php-webapp-service -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
   register: service_ip
   until: service_ip.stdout != ""
   retries: 30
   delay: 10
 
-- name: Show test information
+- name: Show deployment information
   debug:
     msg: |
-      Web application has been deployed!
+      PHP Web application has been deployed!
       You can access it at: http://{{ service_ip.stdout }}
+      Try the matrix test at: http://{{ service_ip.stdout }}/matrix.php?size=400
       
-      To test load balancing, try refreshing the page multiple times.
-      You should see different pod names as the requests are distributed.
-
-- name: Create nginx config
-  copy:
-    dest: /tmp/nginx.conf
-    content: |
-      user  nginx;
-      worker_processes  auto;
-      error_log  /var/log/nginx/error.log notice;
-      pid        /var/run/nginx.pid;
-      events {
-          worker_connections  1024;
-      }
-      http {
-          include       /etc/nginx/mime.types;
-          default_type  application/octet-stream;
-          server {
-              listen       80;
-              server_name  localhost;
-              location / {
-                  root   /usr/share/nginx/html;
-                  index  index.html index.htm;
-                  sub_filter '$(hostname)' '$hostname';
-                  sub_filter '$(date)' '$time_local';
-                  sub_filter_once off;
-              }
-          }
-      }
-
-- name: Update deployment with nginx config
-  copy:
-    dest: /tmp/test-web.yaml
-    content: |
-      # PersistentVolume para web
-      apiVersion: v1
-      kind: PersistentVolume
-      metadata:
-        name: web-pv
-      spec:
-        capacity:
-          storage: 1Gi
-        accessModes:
-          - ReadWriteMany
-        persistentVolumeReclaimPolicy: Retain
-        nfs:
-          path: {{ nfs_path }}/html
-          server: {{ hostvars['nfs-server'].ansible_host }}
-      ---
-      # PersistentVolumeClaim para web
-      apiVersion: v1
-      kind: PersistentVolumeClaim
-      metadata:
-        name: web-pvc
-      spec:
-        accessModes:
-          - ReadWriteMany
-        resources:
-          requests:
-            storage: 1Gi
-      ---
-      # ConfigMap para nginx.conf
-      apiVersion: v1
-      kind: ConfigMap
-      metadata:
-        name: nginx-config
-      data:
-        nginx.conf: |
-          user  nginx;
-          worker_processes  auto;
-          error_log  /var/log/nginx/error.log notice;
-          pid        /var/run/nginx.pid;
-          events {
-              worker_connections  1024;
-          }
-          http {
-              include       /etc/nginx/mime.types;
-              default_type  application/octet-stream;
-              server {
-                  listen       80;
-                  server_name  localhost;
-                  location / {
-                      root   /usr/share/nginx/html;
-                      index  index.html index.htm;
-                      sub_filter '$(hostname)' '$hostname';
-                      sub_filter '$(date)' '$time_local';
-                      sub_filter_once off;
-                  }
-              }
-          }
-      ---
-      # Deployment de NGINX
-      apiVersion: apps/v1
-      kind: Deployment
-      metadata:
-        name: web-nginx
-      spec:
-        replicas: 3
-        selector:
-          matchLabels:
-            app: web-nginx
-        template:
-          metadata:
-            labels:
-              app: web-nginx
-          spec:
-            containers:
-            - name: nginx
-              image: nginx
-              ports:
-              - containerPort: 80
-              volumeMounts:
-              - name: web-content
-                mountPath: /usr/share/nginx/html
-              - name: nginx-config
-                mountPath: /etc/nginx/nginx.conf
-                subPath: nginx.conf
-            volumes:
-            - name: web-content
-              persistentVolumeClaim:
-                claimName: web-pvc
-            - name: nginx-config
-              configMap:
-                name: nginx-config
-      ---
-      # Service tipo LoadBalancer
-      apiVersion: v1
-      kind: Service
-      metadata:
-        name: web-service
-        annotations:
-          metallb.universe.tf/address-pool: first-pool
-      spec:
-        type: LoadBalancer
-        ports:
-        - port: 80
-          targetPort: 80
-        selector:
-          app: web-nginx
-
-- name: Apply updated deployment
-  command: kubectl apply -f /tmp/test-web.yaml
-
-- name: Wait for deployment
-  shell: |
-    kubectl rollout status deployment/web-nginx
-  register: deployment_status
-  until: deployment_status.rc == 0
-  retries: 30
-  delay: 10
-
-- name: Wait for pods to be ready
-  shell: |
-    kubectl wait --for=condition=ready pod -l app=web-nginx --timeout=120s
-  register: pods_ready
-  retries: 30
-  delay: 10
-  until: pods_ready.rc == 0
-
-- name: Show test information
-  debug:
-    msg: |
-      Web application has been deployed!
-      You can access it at: http://{{ service_ip.stdout }}
-      
-      To test load balancing, try refreshing the page multiple times.
-      You should see different pod names as the requests are distributed. 
+      To see pod distribution:
+      kubectl get pods -l app=php-webapp -o wide 
