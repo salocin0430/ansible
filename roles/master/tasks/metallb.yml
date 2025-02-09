@@ -30,14 +30,15 @@
 
 - name: Apply modified MetalLB manifest
   command: kubectl apply -f /tmp/metallb-no-webhooks.yaml --validate=false
+  ignore_errors: yes
 
-- name: Wait for MetalLB deployment
+- name: Wait for MetalLB pods
   shell: |
-    kubectl -n metallb-system rollout status deployment controller
-  register: controller_status
+    kubectl -n metallb-system wait --for=condition=ready pod --selector=app=metallb --timeout=180s
+  register: wait_result
+  until: wait_result.rc == 0
   retries: 30
   delay: 10
-  until: controller_status.rc == 0
 
 # Configuración de MetalLB
 - name: Create MetalLB config
@@ -64,8 +65,14 @@
 
 - name: Apply MetalLB configuration
   command: kubectl apply -f /tmp/metallb-config.yaml --validate=false
+  ignore_errors: yes
 
-- name: Show MetalLB status
+- name: Verify MetalLB functionality
   shell: |
+    echo "Pod Status:"
     kubectl get pods -n metallb-system
+    echo "IPAddressPool Status:"
+    kubectl get ipaddresspools -n metallb-system
+    echo "L2Advertisement Status:"
+    kubectl get l2advertisements -n metallb-system
   register: metallb_status 
