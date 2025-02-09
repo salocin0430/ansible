@@ -75,25 +75,6 @@
 - name: Apply test web deployment
   command: kubectl apply -f /tmp/test-web.yaml
 
-- name: Create test web content
-  shell: |
-    mkdir -p /tmp/web-test
-    cat > /tmp/web-test/index.html << EOF
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Test K8s Cluster</title>
-    </head>
-    <body>
-        <h1>Kubernetes Cluster Test</h1>
-        <p>This page is served from NFS storage and exposed via MetalLB LoadBalancer</p>
-        <p>Pod: \$(hostname)</p>
-        <p>Time: \$(date)</p>
-    </body>
-    </html>
-    EOF
-    kubectl exec -it $(kubectl get pod -l app=web-nginx -o jsonpath='{.items[0].metadata.name}') -- sh -c "cp /tmp/web-test/* /usr/share/nginx/html/"
-
 - name: Wait for deployment
   shell: |
     kubectl rollout status deployment/web-nginx
@@ -102,10 +83,68 @@
   retries: 30
   delay: 10
 
+- name: Wait for pods to be ready
+  shell: |
+    kubectl wait --for=condition=ready pod -l app=web-nginx --timeout=120s
+  register: pods_ready
+  retries: 30
+  delay: 10
+  until: pods_ready.rc == 0
+
+- name: Create test web content
+  shell: |
+    # Crear el contenido en el NFS directamente
+    mkdir -p {{ nfs_path }}/html
+    cat > {{ nfs_path }}/html/index.html << EOF
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Test K8s Cluster</title>
+        <style>
+            body { font-family: Arial, sans-serif; margin: 40px; }
+            .info { background: #f0f0f0; padding: 20px; border-radius: 5px; }
+        </style>
+    </head>
+    <body>
+        <h1>Kubernetes Cluster Test</h1>
+        <div class="info">
+            <p><strong>Storage:</strong> This page is served from NFS storage</p>
+            <p><strong>LoadBalancer:</strong> Exposed via MetalLB</p>
+            <p><strong>Pod:</strong> <span id="hostname">Loading...</span></p>
+            <p><strong>Time:</strong> <span id="time">Loading...</span></p>
+        </div>
+        <script>
+            fetch('/hostname')
+                .then(response => response.text())
+                .then(data => document.getElementById('hostname').textContent = data);
+            
+            function updateTime() {
+                document.getElementById('time').textContent = new Date().toLocaleString();
+            }
+            updateTime();
+            setInterval(updateTime, 1000);
+        </script>
+    </body>
+    </html>
+    EOF
+  delegate_to: nfs-server
+
+- name: Create hostname script
+  shell: |
+    cat > {{ nfs_path }}/html/hostname << EOF
+    #!/bin/sh
+    hostname
+    EOF
+    chmod +x {{ nfs_path }}/html/hostname
+  delegate_to: nfs-server
+
 - name: Get service IP
   shell: |
     kubectl get service web-service -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
   register: service_ip
+  until: service_ip.stdout != ""
+  retries: 30
+  delay: 10
 
 - name: Show test information
   debug:
