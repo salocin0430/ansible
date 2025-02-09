@@ -38,4 +38,7 @@
 
 - name: Remove master node taint
   command: kubectl taint nodes --all node-role.kubernetes.io/control-plane-
-  ignore_errors: yes 
+  ignore_errors: yes
+
+- name: Include NFS test tasks
+  include_tasks: nfs-test.yml 

@@ -1,0 +1,55 @@
+---
+- name: Create NFS test manifest
+  template:
+    src: test-nfs.yaml.j2
+    dest: /tmp/test-nfs.yaml
+
+- name: Apply NFS test manifest
+  command: kubectl apply -f /tmp/test-nfs.yaml
+
+- name: Wait for PV and PVC to be bound
+  shell: |
+    kubectl get pv nfs-pv-test -o jsonpath='{.status.phase}'
+  register: pv_status
+  until: pv_status.stdout == "Bound"
+  retries: 12
+  delay: 5
+
+- name: Create test pod to verify NFS
+  command: |
+    kubectl run nfs-test --image=busybox -- sleep 3600
+  ignore_errors: yes
+
+- name: Wait for test pod to be ready
+  shell: |
+    kubectl wait --for=condition=ready pod/nfs-test --timeout=60s
+  register: pod_status
+  until: pod_status.rc == 0
+  retries: 6
+  delay: 10
+
+- name: Mount NFS volume in test pod
+  shell: |
+    kubectl exec nfs-test -- mount {{ hostvars['nfs-server'].ansible_host }}:{{ nfs_path }} /mnt
+  ignore_errors: yes
+
+- name: Test NFS write access
+  shell: |
+    kubectl exec nfs-test -- sh -c 'echo "test" > /mnt/test.txt'
+  ignore_errors: yes
+
+- name: Show test results
+  shell: |
+    echo "PV Status:"
+    kubectl get pv
+    echo "PVC Status:"
+    kubectl get pvc
+    echo "Pod Status:"
+    kubectl get pod nfs-test
+    echo "NFS Test File:"
+    kubectl exec nfs-test -- cat /mnt/test.txt
+  register: test_results
+
+- name: Display test results
+  debug:
+    var: test_results.stdout_lines 
