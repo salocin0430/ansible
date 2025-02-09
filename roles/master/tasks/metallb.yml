@@ -10,18 +10,10 @@
     kubectl wait --for=delete namespace/metallb-system --timeout=60s
   ignore_errors: yes
 
-# Asegurar que Helm está instalado
+# Verificar que Helm está instalado
 - name: Check if Helm is installed
   command: which helm
-  register: helm_check
-  ignore_errors: yes
-
-- name: Install Helm if not present
-  shell: |
-    curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
-    chmod 700 get_helm.sh
-    ./get_helm.sh
-  when: helm_check.rc != 0
+  changed_when: false
 
 # Instalación de MetalLB usando Helm
 - name: Add Helm repo
