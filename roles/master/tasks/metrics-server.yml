@@ -15,13 +15,16 @@
         name: system:metrics-server
       rules:
       - apiGroups: [""]
-        resources: ["pods", "nodes", "nodes/stats", "namespaces", "configmaps"]
+        resources: ["nodes/stats", "nodes/metrics", "nodes/proxy"]
+        verbs: ["get", "list", "watch", "create"]
+      - apiGroups: [""]
+        resources: ["pods", "nodes", "namespaces", "configmaps"]
         verbs: ["get", "list", "watch"]
       ---
       apiVersion: rbac.authorization.k8s.io/v1
       kind: ClusterRoleBinding
       metadata:
-        name: metrics-server:system:auth-delegator
+        name: system:metrics-server
       roleRef:
         apiGroup: rbac.authorization.k8s.io
         kind: ClusterRole
@@ -46,18 +49,32 @@
               k8s-app: metrics-server
           spec:
             hostNetwork: true
+            nodeSelector:
+              kubernetes.io/hostname: k8s-master
+            tolerations:
+            - key: node-role.kubernetes.io/control-plane
+              operator: Exists
+              effect: NoSchedule
             containers:
             - args:
               - --cert-dir=/tmp
               - --secure-port=4443
-              - --kubelet-preferred-address-types=InternalIP,ExternalIP,Hostname
+              - --kubelet-preferred-address-types=InternalIP
               - --kubelet-insecure-tls
+              - --kubelet-use-node-status-port
               - --metric-resolution=30s
+              - --authorization-always-allow-paths=/livez,/readyz
               image: registry.k8s.io/metrics-server/metrics-server:v0.7.2
               name: metrics-server
               ports:
               - containerPort: 4443
                 protocol: TCP
+              securityContext:
+                runAsNonRoot: true
+                runAsUser: 1000
+              volumeMounts:
+              - mountPath: /tmp
+                name: tmp-dir
             serviceAccountName: metrics-server
             volumes:
             - emptyDir: {}
@@ -72,24 +89,28 @@
 - name: Deploy Metrics Server
   command: kubectl apply -f /tmp/components.yaml
 
-- name: Wait and verify
+- name: Wait for pod on master
   shell: |
-    echo "Waiting for metrics-server to start..."
-    kubectl -n kube-system wait --for=condition=ready pod -l k8s-app=metrics-server --timeout=120s
-    
-    echo "\n=== Pod Status ==="
-    kubectl -n kube-system get pods -l k8s-app=metrics-server
-    
+    echo "Waiting for metrics-server to start on master node..."
+    for i in $(seq 1 12); do
+      if kubectl -n kube-system get pods -l k8s-app=metrics-server -o wide | grep k8s-master; then
+        break
+      fi
+      echo "Waiting... attempt $i"
+      sleep 10
+    done
+  register: wait_result
+
+- name: Show pod status
+  shell: |
+    echo "=== Pod Status and Location ==="
+    kubectl -n kube-system get pods -l k8s-app=metrics-server -o wide
     echo "\n=== Pod Logs ==="
     kubectl -n kube-system logs -l k8s-app=metrics-server
-    
-    echo "\n=== Testing Metrics ==="
-    sleep 15
-    kubectl top nodes
   register: status
   ignore_errors: yes
 
-- name: Show status
+- name: Display status
   debug:
     var: status.stdout_lines
 
