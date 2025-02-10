@@ -51,4 +51,5 @@
 - name: Include Metrics Server tasks
   include_tasks: metrics-server.yml
   tags: 
-    - metrics-server 
+    - metrics-server
+  when: true  # Forzar la ejecución 
