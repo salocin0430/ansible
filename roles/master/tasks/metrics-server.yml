@@ -46,29 +46,22 @@
               k8s-app: metrics-server
           spec:
             hostNetwork: true
-            securityContext:
-              fsGroup: 2000
             containers:
             - args:
+              - --cert-dir=/tmp
+              - --secure-port=4443
               - --kubelet-preferred-address-types=InternalIP,ExternalIP,Hostname
               - --kubelet-insecure-tls
               - --metric-resolution=30s
-              - --cert-dir=/tmp/certs
               image: registry.k8s.io/metrics-server/metrics-server:v0.7.2
               name: metrics-server
-              securityContext:
-                runAsUser: 1000
-                runAsGroup: 3000
-              volumeMounts:
-              - mountPath: /tmp/certs
-                name: certs
-                readOnly: false
+              ports:
+              - containerPort: 4443
+                protocol: TCP
             serviceAccountName: metrics-server
             volumes:
-            - name: certs
-              emptyDir:
-                medium: Memory
-                sizeLimit: 50Mi
+            - emptyDir: {}
+              name: tmp-dir
 
 - name: Remove existing metrics-server
   shell: |
@@ -98,4 +91,21 @@
 
 - name: Show status
   debug:
-    var: status.stdout_lines 
+    var: status.stdout_lines
+
+- name: Add debug task
+  shell: |
+    echo "=== Network Status ==="
+    netstat -tulpn | grep 4443
+    echo "\n=== Pod Status ==="
+    kubectl -n kube-system get pods -l k8s-app=metrics-server -o wide
+    echo "\n=== Node Status ==="
+    kubectl get nodes -o wide
+    echo "\n=== Testing Connection ==="
+    curl -k https://localhost:4443/metrics
+  register: debug_info
+  ignore_errors: yes
+
+- name: Show debug info
+  debug:
+    var: debug_info.stdout_lines 
