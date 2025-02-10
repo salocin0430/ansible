@@ -28,6 +28,14 @@
         verbs: ["create"]
       ---
       apiVersion: rbac.authorization.k8s.io/v1
+      kind: ClusterRole
+      metadata:
+        name: system:metrics-server-auth
+      rules:
+      - nonResourceURLs: ["/metrics"]
+        verbs: ["get"]
+      ---
+      apiVersion: rbac.authorization.k8s.io/v1
       kind: ClusterRoleBinding
       metadata:
         name: system:metrics-server
@@ -39,6 +47,22 @@
       - kind: ServiceAccount
         name: metrics-server
         namespace: kube-system
+      ---
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: ClusterRoleBinding
+      metadata:
+        name: metrics-server-auth
+      roleRef:
+        apiGroup: rbac.authorization.k8s.io
+        kind: ClusterRole
+        name: system:metrics-server-auth
+      subjects:
+      - apiGroup: rbac.authorization.k8s.io
+        kind: Group
+        name: system:authenticated
+      - apiGroup: rbac.authorization.k8s.io
+        kind: Group
+        name: system:unauthenticated
       ---
       apiVersion: apps/v1
       kind: Deployment
@@ -69,7 +93,8 @@
               - --kubelet-insecure-tls
               - --kubelet-use-node-status-port
               - --metric-resolution=30s
-              - --authorization-always-allow-paths=/livez,/readyz
+              - --authentication-skip-lookup
+              - --authentication-token-webhook=false
               image: registry.k8s.io/metrics-server/metrics-server:v0.7.2
               name: metrics-server
               ports:
