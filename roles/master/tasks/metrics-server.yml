@@ -124,43 +124,22 @@
             - args:
               - --cert-dir=/tmp
               - --secure-port=4443
-              - --kubelet-preferred-address-types=InternalIP,ExternalIP,Hostname
-              - --kubelet-use-node-status-port
-              - --metric-resolution=15s
+              - --kubelet-preferred-address-types=InternalIP
               - --kubelet-insecure-tls
+              - --metric-resolution=15s
               command:
               - /metrics-server
               image: registry.k8s.io/metrics-server/metrics-server:v0.6.4
               imagePullPolicy: IfNotPresent
-              livenessProbe:
-                failureThreshold: 3
-                httpGet:
-                  path: /livez
-                  port: https
-                  scheme: HTTPS
-                periodSeconds: 10
               name: metrics-server
               ports:
               - containerPort: 4443
                 name: https
                 protocol: TCP
-              readinessProbe:
-                failureThreshold: 3
-                httpGet:
-                  path: /readyz
-                  port: https
-                  scheme: HTTPS
-                initialDelaySeconds: 20
-                periodSeconds: 10
-              resources:
-                requests:
-                  cpu: 100m
-                  memory: 200Mi
               securityContext:
-                allowPrivilegeEscalation: false
-                readOnlyRootFilesystem: true
                 runAsNonRoot: true
                 runAsUser: 1000
+                readOnlyRootFilesystem: true
               volumeMounts:
               - mountPath: /tmp
                 name: tmp-dir
@@ -173,27 +152,55 @@
             - emptyDir: {}
               name: tmp-dir
 
+- name: Delete existing metrics-server if any
+  command: kubectl delete -f /tmp/metrics-server.yaml
+  ignore_errors: yes
+
+- name: Wait for deletion
+  shell: |
+    kubectl -n kube-system wait --for=delete deployment/metrics-server --timeout=60s
+  ignore_errors: yes
+
 - name: Apply metrics-server manifest
   command: kubectl apply -f /tmp/metrics-server.yaml
 
-- name: Wait for metrics-server deployment
+- name: Wait for metrics-server pod
   shell: |
-    kubectl -n kube-system wait --for=condition=available deployment/metrics-server --timeout=120s
-  register: metrics_status
-  until: metrics_status.rc == 0
+    kubectl -n kube-system wait --for=condition=ready pod -l k8s-app=metrics-server --timeout=120s
+  register: pod_status
+  until: pod_status.rc == 0
   retries: 30
   delay: 10
 
-- name: Verify metrics-server
+- name: Check metrics-server logs
+  shell: |
+    echo "=== Metrics Server Logs ==="
+    kubectl -n kube-system logs -l k8s-app=metrics-server --tail=50
+  register: metrics_logs
+
+- name: Display metrics-server logs
+  debug:
+    var: metrics_logs.stdout_lines
+
+- name: Wait for API to be available
+  shell: |
+    kubectl get --raw "/apis/metrics.k8s.io/v1beta1/nodes"
+  register: api_check
+  until: api_check.rc == 0
+  retries: 12
+  delay: 10
+
+- name: Final verification
   shell: |
     echo "=== Metrics Server Status ==="
     kubectl get deployment metrics-server -n kube-system
     echo "\n=== Node Metrics ==="
-    kubectl top nodes || echo "Waiting for metrics to be collected..."
+    kubectl top nodes
     echo "\n=== Pod Metrics ==="
-    kubectl top pods -A || echo "Waiting for metrics to be collected..."
-  register: metrics_verification
+    kubectl top pods -A
+  register: final_check
+  ignore_errors: yes
 
-- name: Display metrics verification
+- name: Display final status
   debug:
-    var: metrics_verification.stdout_lines 
+    var: final_check.stdout_lines 
