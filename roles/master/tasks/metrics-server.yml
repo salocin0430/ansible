@@ -46,6 +46,8 @@
               k8s-app: metrics-server
           spec:
             hostNetwork: true
+            securityContext:
+              fsGroup: 2000
             containers:
             - args:
               - --kubelet-preferred-address-types=InternalIP,ExternalIP,Hostname
@@ -57,7 +59,6 @@
               securityContext:
                 runAsUser: 1000
                 runAsGroup: 3000
-                fsGroup: 2000
               volumeMounts:
               - mountPath: /tmp/certs
                 name: certs
