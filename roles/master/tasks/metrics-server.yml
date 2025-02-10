@@ -3,6 +3,34 @@
   copy:
     dest: /tmp/components.yaml
     content: |
+      apiVersion: v1
+      kind: ServiceAccount
+      metadata:
+        name: metrics-server
+        namespace: kube-system
+      ---
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: ClusterRole
+      metadata:
+        name: system:metrics-server
+      rules:
+      - apiGroups: [""]
+        resources: ["pods", "nodes", "nodes/stats", "namespaces", "configmaps"]
+        verbs: ["get", "list", "watch"]
+      ---
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: ClusterRoleBinding
+      metadata:
+        name: metrics-server:system:auth-delegator
+      roleRef:
+        apiGroup: rbac.authorization.k8s.io
+        kind: ClusterRole
+        name: system:metrics-server
+      subjects:
+      - kind: ServiceAccount
+        name: metrics-server
+        namespace: kube-system
+      ---
       apiVersion: apps/v1
       kind: Deployment
       metadata:
@@ -17,29 +45,47 @@
             labels:
               k8s-app: metrics-server
           spec:
-            hostNetwork: true
-            nodeName: k8s-master
+            hostNetwork: true  # Importante según el artículo
             containers:
             - args:
-              - --cert-dir=/tmp
-              - --secure-port=4443
               - --kubelet-preferred-address-types=InternalIP,ExternalIP,Hostname
-              - --kubelet-use-node-status-port
-              - --metric-resolution=15s
               - --kubelet-insecure-tls
-              command:
-              - /metrics-server
+              - --metric-resolution=30s
               image: registry.k8s.io/metrics-server/metrics-server:v0.7.2
               name: metrics-server
-              ports:
-              - containerPort: 4443
+              volumeMounts:
+              - mountPath: /tmp
+                name: tmp-dir
+            serviceAccountName: metrics-server
+            volumes:
+            - emptyDir: {}
+              name: tmp-dir
+
+- name: Remove existing metrics-server
+  shell: |
+    kubectl delete -f /tmp/components.yaml --ignore-not-found=true
+    sleep 5
+  ignore_errors: yes
 
 - name: Deploy Metrics Server
   command: kubectl apply -f /tmp/components.yaml
 
-- name: Verify deployment
+- name: Wait for pod readiness
   shell: |
-    echo "=== Metrics Server Status ==="
+    echo "Waiting for metrics-server to start..."
+    kubectl -n kube-system wait --for=condition=ready pod -l k8s-app=metrics-server --timeout=120s
+    echo "Waiting additional time for metrics collection (10-15s as mentioned in the article)..."
+    sleep 15
+
+- name: Verify metrics
+  shell: |
+    echo "=== Pod Status ==="
     kubectl -n kube-system get pods -l k8s-app=metrics-server
-    echo "\n=== Testing metrics ==="
-    kubectl top nodes || echo "Waiting for metrics..." 
+    echo "\n=== Testing Metrics ==="
+    kubectl top nodes
+  register: status
+  ignore_errors: yes
+
+- name: Show status
+  debug:
+    var: status.stdout_lines 
