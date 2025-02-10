@@ -45,21 +45,29 @@
             labels:
               k8s-app: metrics-server
           spec:
-            hostNetwork: true  # Importante según el artículo
+            hostNetwork: true
             containers:
             - args:
               - --kubelet-preferred-address-types=InternalIP,ExternalIP,Hostname
               - --kubelet-insecure-tls
               - --metric-resolution=30s
+              - --cert-dir=/tmp/certs
               image: registry.k8s.io/metrics-server/metrics-server:v0.7.2
               name: metrics-server
+              securityContext:
+                runAsUser: 1000
+                runAsGroup: 3000
+                fsGroup: 2000
               volumeMounts:
-              - mountPath: /tmp
-                name: tmp-dir
+              - mountPath: /tmp/certs
+                name: certs
+                readOnly: false
             serviceAccountName: metrics-server
             volumes:
-            - emptyDir: {}
-              name: tmp-dir
+            - name: certs
+              emptyDir:
+                medium: Memory
+                sizeLimit: 50Mi
 
 - name: Remove existing metrics-server
   shell: |
@@ -70,18 +78,19 @@
 - name: Deploy Metrics Server
   command: kubectl apply -f /tmp/components.yaml
 
-- name: Wait for pod readiness
+- name: Wait and verify
   shell: |
     echo "Waiting for metrics-server to start..."
     kubectl -n kube-system wait --for=condition=ready pod -l k8s-app=metrics-server --timeout=120s
-    echo "Waiting additional time for metrics collection (10-15s as mentioned in the article)..."
-    sleep 15
-
-- name: Verify metrics
-  shell: |
-    echo "=== Pod Status ==="
+    
+    echo "\n=== Pod Status ==="
     kubectl -n kube-system get pods -l k8s-app=metrics-server
+    
+    echo "\n=== Pod Logs ==="
+    kubectl -n kube-system logs -l k8s-app=metrics-server
+    
     echo "\n=== Testing Metrics ==="
+    sleep 15
     kubectl top nodes
   register: status
   ignore_errors: yes
