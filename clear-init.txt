@@ -1,3 +1,24 @@
+#!/bin/bash
+
+# Limpiar el cluster
+echo "=== Limpiando el cluster ==="
+kubectl delete deployment php-webapp
+kubectl delete service php-webapp-service
+kubectl delete namespace metallb-system
+
+# Resetear los nodos
+echo "=== Reseteando los nodos ==="
+ansible workers -m shell -a "kubeadm reset -f"
+ansible master -m shell -a "kubeadm reset -f"
+
+# Limpiar NFS
+echo "=== Limpiando NFS ==="
+ansible nfs-server -m shell -a "rm -rf /srv/nfs/*"
+
+# Reiniciar el despliegue
+echo "=== Reiniciando el despliegue ==="
+ansible-playbook site.yml
+
 # En el nuevo servidor Ansible (clonado del master)
 # 1. Limpia la configuración de Kubernetes
 kubeadm reset -f

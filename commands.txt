@@ -1,0 +1,200 @@
+# === DESPLIEGUE COMPLETO DEL CLUSTER ===
+
+# 1. Verificar la conectividad con los hosts
+ansible all -m ping
+
+# 2. Despliegue inicial del cluster
+ansible-playbook site.yml
+
+# 3. Verificar el estado del cluster
+kubectl get nodes
+kubectl get pods --all-namespaces
+
+# === DESPLIEGUE DE COMPONENTES INDIVIDUALES ===
+
+# 4. Desplegar MetalLB (si no se desplegó en el paso 2)
+ansible-playbook site.yml --tags=master
+
+# 5. Verificar MetalLB
+kubectl get pods -n metallb-system
+kubectl get configmap -n metallb-system
+
+# 6. Verificar NFS
+# En el servidor NFS
+ls -l /srv/nfs
+# En el master
+kubectl get pv
+kubectl get pvc
+
+# 7. Desplegar la aplicación web
+ansible-playbook site.yml --tags=test-deploy
+
+# 8. Verificar el despliegue de la aplicación
+kubectl get pods -l app=php-webapp -o wide
+kubectl get service php-webapp-service
+
+# === PRUEBAS Y VERIFICACIÓN ===
+
+# 9. Obtener la IP del servicio
+kubectl get service php-webapp-service -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+
+# 10. Probar el balanceo de carga
+# Acceder desde el navegador a:
+http://<IP_DEL_SERVICIO>/matrix.php?size=400
+
+# === COMANDOS DE DIAGNÓSTICO ===
+
+# Ver logs de los pods
+kubectl logs -l app=php-webapp
+
+# Ver eventos del cluster
+kubectl get events --sort-by='.lastTimestamp'
+
+# Ver detalles del deployment
+kubectl describe deployment php-webapp
+
+# === COMANDOS DE MANTENIMIENTO ===
+
+# Escalar la aplicación
+kubectl scale deployment php-webapp --replicas=5
+
+# Reiniciar el deployment
+kubectl rollout restart deployment php-webapp
+
+# === LIMPIEZA (SI ES NECESARIO) ===
+
+# Eliminar la aplicación
+kubectl delete deployment php-webapp
+kubectl delete service php-webapp-service
+
+# Eliminar MetalLB
+kubectl delete namespace metallb-system
+
+# Limpiar NFS
+# En el servidor NFS
+rm -rf /srv/nfs/*
+
+# === REINICIO COMPLETO DEL CLUSTER ===
+
+# 1. En los workers
+kubeadm reset -f
+
+# 2. En el master
+kubeadm reset -f
+rm -rf /root/.kube
+
+# 3. Volver a desplegar todo
+ansible-playbook site.yml
+
+# === DESPLIEGUE PASO A PASO ===
+
+# 1. Preparar los nodos
+ansible-playbook site.yml --tags=prepare
+
+# 2. Configurar el NFS server
+ansible-playbook site.yml --tags=nfs
+
+# 3. Inicializar el master
+ansible-playbook site.yml --tags=master --skip-tags=metallb,nfs-test,test-deploy
+
+# 4. Unir los workers
+ansible-playbook site.yml --tags=workers
+
+# 5. Verificar el cluster base
+kubectl get nodes
+kubectl get pods --all-namespaces
+
+# 6. Instalar MetalLB
+ansible-playbook site.yml --tags=metallb
+
+# 7. Verificar MetalLB
+kubectl get pods -n metallb-system
+kubectl get configmap -n metallb-system
+
+# 8. Configurar NFS en Kubernetes
+ansible-playbook site.yml --tags=nfs-test
+
+# 9. Verificar NFS
+kubectl get pv
+kubectl get pvc
+
+# 10. Desplegar la aplicación web
+ansible-playbook site.yml --tags=test-deploy
+
+# 11. Verificar el despliegue completo
+kubectl get pods -l app=php-webapp -o wide
+kubectl get service php-webapp-service
+
+# === VERIFICACIÓN PASO A PASO ===
+
+# Después de preparar los nodos
+ansible all -m ping
+ansible all -m shell -a "hostname"
+
+# Después de configurar NFS
+ansible nfs-server -m shell -a "systemctl status nfs-server"
+ansible nfs-server -m shell -a "showmount -e"
+
+# Después de inicializar el master
+ansible master -m shell -a "kubectl get nodes"
+ansible master -m shell -a "kubectl get pods -n kube-system"
+
+# Después de unir los workers
+ansible master -m shell -a "kubectl get nodes"
+ansible all -m shell -a "crictl ps"
+
+# Después de instalar MetalLB
+kubectl get pods -n metallb-system
+kubectl get configmap -n metallb-system -o yaml
+
+# Después de configurar NFS en K8s
+kubectl get pv
+kubectl get pvc
+kubectl describe pv
+kubectl describe pvc
+
+# Después de desplegar la aplicación
+kubectl get pods -l app=php-webapp -o wide
+kubectl get service php-webapp-service
+kubectl describe service php-webapp-service
+
+# === TROUBLESHOOTING COMÚN ===
+
+# Si los workers no se unen
+kubeadm token create --print-join-command
+
+# Si MetalLB no asigna IPs
+kubectl -n metallb-system logs -l app=metallb
+
+# Si NFS no funciona
+showmount -e nfs-server
+mount -t nfs nfs-server:/srv/nfs /mnt
+
+# Si los pods no arrancan
+kubectl describe pod -l app=php-webapp
+kubectl logs -l app=php-webapp
+
+# === COMANDOS DE LIMPIEZA PASO A PASO ===
+
+# 1. Limpiar la aplicación
+kubectl delete deployment php-webapp
+kubectl delete service php-webapp-service
+
+# 2. Limpiar NFS en K8s
+kubectl delete pvc --all
+kubectl delete pv --all
+
+# 3. Limpiar MetalLB
+kubectl delete namespace metallb-system
+
+# 4. Reset workers
+ansible workers -m shell -a "kubeadm reset -f"
+
+# 5. Reset master
+ansible master -m shell -a "kubeadm reset -f"
+
+# 6. Limpiar NFS
+ansible nfs-server -m shell -a "rm -rf /srv/nfs/*"
+
+# === REINICIO RÁPIDO ===
+./clear-init.sh && ansible-playbook site.yml
