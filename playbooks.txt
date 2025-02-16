@@ -7,10 +7,19 @@ ansible-playbook site.yml --tags=nfs
 # 3. Configurar master
 ansible-playbook site.yml --tags=master --skip-tags=metallb,nfs-test,test-deploy
 
-# 4. Unir workers
+
+
+# 2. Verificar que el master está bien
+ssh k8s-master
+kubectl get nodes
+
+# 3. Unir workers
 ansible-playbook site.yml --tags=workers
 
-# 5. Instalar MetalLB
+# 4. Verificar cluster
+kubectl get nodes
+
+# 5. Ahora sí, instalar MetalLB por separado
 ansible-playbook site.yml --tags=metallb
 
 # 6. Configurar NFS en Kubernetes (PV y PVC)

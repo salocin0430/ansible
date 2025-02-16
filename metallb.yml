@@ -1,0 +1,6 @@
+---
+- name: Deploy MetalLB
+  hosts: master
+  tasks:
+    - name: Include MetalLB tasks
+      include_tasks: roles/master/tasks/metallb.yml 

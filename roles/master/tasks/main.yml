@@ -37,7 +37,7 @@
   include_tasks: metallb.yml
   tags: 
     - metallb
-  when: false 
+  when: "'metallb' in ansible_run_tags"
 
 - name: Remove master node taint
   command: kubectl taint nodes --all node-role.kubernetes.io/control-plane-
