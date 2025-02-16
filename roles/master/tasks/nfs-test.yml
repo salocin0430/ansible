@@ -47,18 +47,18 @@
         - name: nfs-volume
           persistentVolumeClaim:
             claimName: nfs-pvc-test
-tags:
+  tags:
     - nfs-test
 
 - name: Apply test pod
   command: kubectl apply -f /tmp/test-pod.yaml
-tags:
+  tags:
     - nfs-test
 
 - name: Wait for test pod to be ready
   shell: |
     kubectl wait --for=condition=ready pod/nfs-test --timeout=60s
-tags:
+  tags:
     - nfs-test
 
 - name: Test NFS write access
@@ -66,7 +66,7 @@ tags:
     kubectl exec nfs-test -- sh -c 'echo "test" > /mnt/test.txt'
   register: write_test
   ignore_errors: yes
-tags:
+  tags:
     - nfs-test
 
 - name: Show test results
@@ -80,11 +80,11 @@ tags:
     echo "NFS Test File Content:"
     kubectl exec nfs-test -- cat /mnt/test.txt || echo "File not found"
   register: test_results
-tags:
+  tags:
     - nfs-test
 
 - name: Display test results
   debug:
     var: test_results.stdout_lines 
-tags:
+  tags:
     - nfs-test
