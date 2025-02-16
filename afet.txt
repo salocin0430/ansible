@@ -1,0 +1,28 @@
+### EN EL SERVIDOR NFS ###
+
+# 1. Detener servicios NFS
+systemctl stop nfs-server
+systemctl stop rpcbind
+systemctl disable nfs-server
+systemctl disable rpcbind
+
+# 2. Desmontar cualquier montaje NFS
+umount -f -l /srv/nfs/* 2>/dev/null
+
+# 3. Limpiar configuración
+rm -rf /srv/nfs/*
+rm -f /etc/exports
+touch /etc/exports
+
+# 4. Limpiar exports
+exportfs -ra
+
+# 5. Remover paquetes (opcional, Ansible los reinstalará)
+dnf remove -y nfs-utils
+
+# 6. Verificar que todo está limpio
+systemctl status nfs-server
+showmount -e
+ls -la /srv/nfs/
+cat /etc/exports
+rpm -qa | grep nfs

@@ -1,0 +1,20 @@
+# 1. Configuración común para todos los nodos
+ansible-playbook site.yml --tags=common
+
+# 2. Configurar NFS server
+ansible-playbook site.yml --tags=nfs
+
+# 3. Configurar master
+ansible-playbook site.yml --tags=master --skip-tags=metallb,nfs-test,test-deploy
+
+# 4. Unir workers
+ansible-playbook site.yml --tags=workers
+
+# 5. Instalar MetalLB
+ansible-playbook site.yml --tags=metallb
+
+# 6. Configurar NFS en Kubernetes (PV y PVC)
+ansible-playbook site.yml --tags=nfs-test
+
+# 7. Desplegar aplicación de prueba
+ansible-playbook site.yml --tags=test-deploy

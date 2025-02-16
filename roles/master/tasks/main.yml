@@ -35,6 +35,9 @@
 
 - name: Include MetalLB tasks
   include_tasks: metallb.yml
+  tags: 
+    - metallb
+  when: false 
 
 - name: Remove master node taint
   command: kubectl taint nodes --all node-role.kubernetes.io/control-plane-
