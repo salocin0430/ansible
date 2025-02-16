@@ -53,3 +53,24 @@
   tags: 
     - metrics-server
   when: true  # Forzar la ejecución 
+
+- name: Configure master node firewall
+  firewalld:
+    port: "{{ item }}"
+    permanent: yes
+    state: enabled
+  loop:
+    - 6443/tcp    # Kubernetes API server
+    - 2379-2380/tcp # etcd server client API
+    - 10250/tcp   # Kubelet API
+    - 10251/tcp   # kube-scheduler
+    - 10252/tcp   # kube-controller-manager
+  notify: reload firewall
+
+- name: Allow worker nodes
+  firewalld:
+    rich_rule: "rule family=ipv4 source address={{ hostvars[item].ansible_host }}/32 accept"
+    permanent: yes
+    state: enabled
+  loop: "{{ groups['workers'] }}"
+  notify: reload firewall 

@@ -97,4 +97,54 @@
     chmod 700 get_helm.sh
     ./get_helm.sh
   args:
-    creates: /usr/local/bin/helm 
+    creates: /usr/local/bin/helm
+
+- name: Install firewalld
+  dnf:
+    name: firewalld
+    state: present
+
+- name: Start and enable firewalld
+  systemd:
+    name: firewalld
+    state: started
+    enabled: yes
+
+- name: Configure firewall for Kubernetes
+  firewalld:
+    port: "{{ item }}"
+    permanent: yes
+    state: enabled
+  loop:
+    - 6443/tcp    # Kubernetes API server
+    - 2379-2380/tcp # etcd server client API
+    - 10250/tcp   # Kubelet API
+    - 10251/tcp   # kube-scheduler
+    - 10252/tcp   # kube-controller-manager
+    - 8472/udp    # Flannel VXLAN
+    - 179/tcp     # Calico BGP
+    - 4789/udp    # MetalLB L2 mode
+
+- name: Configure firewall services
+  firewalld:
+    service: "{{ item }}"
+    permanent: yes
+    state: enabled
+  loop:
+    - http
+    - https
+
+- name: Allow traffic between Kubernetes nodes
+  firewalld:
+    rich_rule: 'rule family=ipv4 source address=10.244.0.0/16 accept'
+    permanent: yes
+    state: enabled
+
+- name: Allow MetalLB L2 traffic
+  firewalld:
+    rich_rule: 'rule family=ipv4 source address=192.168.0.0/24 accept'
+    permanent: yes
+    state: enabled
+
+- name: Reload firewall
+  command: firewall-cmd --reload 
