@@ -3,9 +3,13 @@
   template:
     src: test-nfs.yaml.j2
     dest: /tmp/test-nfs.yaml
+  tags:
+    - nfs-test
 
 - name: Apply NFS test manifest
   command: kubectl apply -f /tmp/test-nfs.yaml
+  tags:
+    - nfs-test
 
 - name: Wait for PV and PVC to be bound
   shell: |
@@ -14,10 +18,14 @@
   until: pv_status.stdout == "Bound"
   retries: 12
   delay: 5
+  tags:
+    - nfs-test
 
 # Eliminar el pod existente si existe
 - name: Delete existing test pod if any
   command: kubectl delete pod nfs-test --ignore-not-found=true
+  tags:
+    - nfs-test
 
 - name: Create test pod with NFS mount
   copy:
@@ -39,19 +47,27 @@
         - name: nfs-volume
           persistentVolumeClaim:
             claimName: nfs-pvc-test
+tags:
+    - nfs-test
 
 - name: Apply test pod
   command: kubectl apply -f /tmp/test-pod.yaml
+tags:
+    - nfs-test
 
 - name: Wait for test pod to be ready
   shell: |
     kubectl wait --for=condition=ready pod/nfs-test --timeout=60s
+tags:
+    - nfs-test
 
 - name: Test NFS write access
   shell: |
     kubectl exec nfs-test -- sh -c 'echo "test" > /mnt/test.txt'
   register: write_test
   ignore_errors: yes
+tags:
+    - nfs-test
 
 - name: Show test results
   shell: |
@@ -64,7 +80,11 @@
     echo "NFS Test File Content:"
     kubectl exec nfs-test -- cat /mnt/test.txt || echo "File not found"
   register: test_results
+tags:
+    - nfs-test
 
 - name: Display test results
   debug:
     var: test_results.stdout_lines 
+tags:
+    - nfs-test
