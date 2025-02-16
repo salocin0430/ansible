@@ -13,6 +13,8 @@
     find {{ nfs_path }} -type f -exec chmod 644 {} \;
     find {{ nfs_path }} -type d -exec chmod 755 {} \;
   delegate_to: nfs-server
+  tags:
+    - test-deploy
 
 # Desplegar la aplicación PHP
 - name: Create PHP web deployment
@@ -59,9 +61,13 @@
         ports:
         - port: 80
           targetPort: 80
+  tags:
+    - test-deploy
 
 - name: Apply PHP deployment
   command: kubectl apply -f /tmp/php-webapp.yaml
+  tags:
+    - test-deploy
 
 - name: Check deployment status
   shell: |
@@ -77,10 +83,14 @@
     echo "\n=== Recent Events ==="
     kubectl get events --sort-by='.lastTimestamp' | tail -n 20
   register: debug_info
+  tags:
+    - test-deploy
 
 - name: Display debug information
   debug:
     var: debug_info.stdout_lines
+  tags:
+    - test-deploy
 
 - name: Wait for deployment
   shell: |
@@ -89,6 +99,8 @@
   until: deployment_status.rc == 0
   retries: 30
   delay: 10
+  tags:
+    - test-deploy
 
 - name: Get service IP
   shell: |
@@ -97,6 +109,8 @@
   until: service_ip.stdout != ""
   retries: 30
   delay: 10
+  tags:
+    - test-deploy
 
 - name: Show deployment information
   debug:
@@ -107,6 +121,8 @@
       
       To see pod distribution:
       kubectl get pods -l app=php-webapp -o wide
+  tags:
+    - test-deploy
 
 - name: Check failing pods
   shell: |
@@ -118,7 +134,11 @@
       kubectl describe pod $pod
     done
   register: pod_logs
+  tags:
+    - test-deploy
 
 - name: Display pod logs
   debug:
-    var: pod_logs.stdout_lines 
+    var: pod_logs.stdout_lines
+  tags:
+    - test-deploy 

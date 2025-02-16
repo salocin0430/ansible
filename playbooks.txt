@@ -24,7 +24,7 @@ ansible-playbook site.yml --tags=metallb NO
 ansible-playbook install-metallb.yml
 
 # 6. Configurar NFS en Kubernetes (PV y PVC)
-ansible-playbook site.yml --tags=nfs-test
+ansible-playbook site.yml --tags=nfs-test --limit=master
 
 # 7. Desplegar aplicación de prueba
 ansible-playbook site.yml --tags=test-deploy
